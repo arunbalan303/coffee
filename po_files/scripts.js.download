@@ -1,0 +1,1041 @@
+
+$.ajaxSetup({ cache: false });
+  // FUNCTIONS
+  // page layout work
+  function productWindow() {
+      // var height = $('.product-wrap').outerHeight();
+      var rightHeight = $('.product-right').outerHeight();
+      var leftHeight = $('.product-left').outerHeight();
+      var mq = window.matchMedia("(min-width: 768px)");
+      if (mq.matches) {
+          if (rightHeight > leftHeight) {
+              $('.product-left').css('height', rightHeight);
+          } else {
+              $('.product-left').removeAttr("style");
+          }
+          //$('.product-left').css('height', height);
+      } else {
+          $('.product-left').css('height', 'auto');
+      }
+    
+  }
+
+
+
+
+
+  //product card height work
+  function cardHeights() {
+      var elHeight, top, cardHeightDiff, newHeight;
+      $(".product-card-noflip .product-description").each(function (index) {
+          elHeight = 120 - $(this).outerHeight();
+          top = $(this).closest('.product-card-noflip').find('.card-top-content');
+          cardHeightDiff = top.outerHeight() - elHeight;
+          newHeight = cardHeightDiff - top.outerHeight();
+          top.height(250 - newHeight);
+      });
+  }
+  cardHeights()
+
+  /* mobile menu */
+
+  var accordionsMenu = $('.cd-accordion-menu');
+
+  if (accordionsMenu.length > 0) {
+
+      accordionsMenu.each(function () {
+          var accordion = $(this);
+          //detect change in the input[type="checkbox"] value
+          accordion.on('change', 'input[type="checkbox"]', function () {
+              var checkbox = $(this);
+              //console.log(checkbox.prop('checked'));
+              (checkbox.prop('checked')) ? checkbox.siblings('ul').attr('style', 'display:none;').slideDown(300): checkbox.siblings('ul').attr('style', 'display:block;').slideUp(300);
+          });
+      });
+  }
+
+
+
+  function toggleSidebar() {
+      $(".menu-button").toggleClass("active");
+      var mq1 = window.matchMedia("(max-width: 768px)");
+      var mq2 = window.matchMedia("(min-width: 769px)");
+      if (mq1.matches) {
+          $("#shop-sidebar").toggleClass("move-to-left");
+      }
+      if (mq2.matches) {}
+      $(".sidebar-item").toggleClass("active");
+      $(".desktop-sidebar").toggleClass("slide-in");
+      if (mq2.matches) {
+          // $('#PageContainer').toggleClass('push-to-left')
+
+      }
+      //$('#PageContainer').addClass('no-scroll')
+  }
+
+  function closeSidebar() {
+      $("#shop-sidebar").removeClass("move-to-left");
+      $('#PageContainer').removeClass('no-scroll')
+      //  $('#PageContainer').removeClass('push-to-left')
+      $(".desktop-sidebar").removeClass("slide-in");
+  }
+
+  function productImage() {
+
+      var mq1 = window.matchMedia("(max-width: 768px)");
+      var mq2 = window.matchMedia("(min-width: 769px)");
+      if (mq2.matches) {
+          $(".full-product-bg").removeClass("bg-hide");
+      }
+      if (mq1.matches) {
+          $(".full-product-bg").addClass("bg-hide");
+      }
+  }
+
+
+ /*============================================================================
+     accordian
+  ==============================================================================*/
+
+var acc = document.getElementsByClassName("accordion");
+var i;
+
+for (i = 0; i < acc.length; i++) {
+  acc[i].addEventListener("click", function() {
+    /* Toggle between adding and removing the "active" class,
+    to highlight the button that controls the panel */
+    this.classList.toggle("active");
+
+    /* Toggle between hiding and showing the active panel */
+    var panel = this.nextElementSibling;
+    if (panel.style.display === "block") {
+      panel.style.display = "none";
+    } else {
+      panel.style.display = "block";
+    }
+  });
+}
+
+  /*============================================================================
+     preloader
+     ==============================================================================*/
+
+  if (Cookies.get('noPreloader') == 'true') {
+      $('#preloader').hide();
+      
+  } else {
+      $(window).load(function () {
+          setTimeout(function () {
+              $('#preloader').fadeOut('slow', function () {
+                  $(this).hide();
+              });
+          }, 800);
+      });
+
+      // and now we create 1 year cookie
+
+      Cookies.set('noPreloader', 'true', {
+          expires: 7
+      });
+  }
+
+  /*
+  // site preloader -- also uncomment the div in the header and the css style for #preloader
+  $(window).load(function () {
+      setTimeout(function () {
+          $('#preloader').fadeOut('slow', function () {
+              $(this).hide();
+          });
+      }, 1500);
+  });
+  */
+
+
+var getUrlParameter = function getUrlParameter(sParam) {
+    var sPageURL = window.location.search.substring(1),
+        sURLVariables = sPageURL.split('&'),
+        sParameterName,
+        i;
+ 
+
+    for (i = 0; i < sURLVariables.length; i++) {
+        sParameterName = sURLVariables[i].split('=');
+
+        if (sParameterName[0] === sParam) {
+            return sParameterName[1] === undefined ? true : decodeURIComponent(sParameterName[1]);
+        }
+    }
+};
+
+
+
+  $(document).ready(function () {
+
+    
+    // Tooltip for all info icons
+    $(document).tooltip({
+      items:'.info-icon',
+      content:function(){
+        return $(this).find(".tooltip-content").html();
+      },
+      tooltipClass: "info-icon-tooltip",
+      show: null, // show immediately
+      open: function(event, ui)
+      {
+          if (typeof(event.originalEvent) === 'undefined')
+          {
+              return false;
+          }
+
+          var $id = $(ui.tooltip).attr('id');
+
+          // close any lingering tooltips
+          $('div.ui-tooltip').not('#' + $id).remove();
+
+          // ajax function to pull in data and add it to the tooltip goes here
+      },
+      close: function(event, ui)
+      {
+          ui.tooltip.hover(function()
+          {
+              $(this).stop(true).fadeTo(400, 1); 
+          },
+          function()
+          {
+              $(this).fadeOut('400', function()
+              {
+                  $(this).remove();
+              });
+          });
+      }
+    });
+    
+    $(".equipment-tab").click(function(e){
+      e.preventDefault();
+     
+      if($(this).attr("tag")=="all"){
+        if(!$(this).hasClass("active")){
+          $(".equipment-tab.active").removeClass("active");
+          $(".equipment-grid").show(200);
+          $(this).addClass("active");
+        }
+      }
+      else if($(this).hasClass("active")){
+        $(this).removeClass("active");
+        $(".equipment-tab[tag=all]").addClass("active");
+        $(".equipment-grid").show(200);
+      }else{
+        $(".equipment-tab.active").removeClass("active");
+        $(".equipment-grid").hide(200);
+      	$(this).addClass("active");
+        $(".equipment-grid[tab="+$(this).attr("tag")+"]").show(200);
+      }
+    });
+    
+    try {
+    $(".express-tab").click(function(e){
+      e.preventDefault();
+     
+      
+      if($(this).attr("tag")=="all"){
+        if(!$(this).hasClass("active")){
+          $(".express-tab.active").removeClass("active");
+          $(".equipment-grid").show(200);
+          $(this).addClass("active");
+        }
+      }
+      else if($(this).hasClass("active")){
+        $(this).removeClass("active");
+        $(".express-tab[tag=all]").addClass("active");
+        $(".equipment-grid").show(200);
+      }else{
+        $(".express-tab.active").removeClass("active");
+        $(".equipment-grid").hide(200);
+      	$(this).addClass("active");
+        $(".equipment-grid[tab="+$(this).attr("tag")+"]").show(200);
+      }
+    });
+    }catch(e){console.log(e);}
+    
+    try{
+      $(".classes-tab").click(function(e){
+        e.preventDefault();
+        if($(this).attr("tag")=="All"){
+          if(!$(this).hasClass("active")){
+            $(".classes-tab.active").removeClass("active");
+            $(".event-wrapper").show(200);
+            $(".event-location-date-row").show(200);
+            $(this).addClass("active");
+          }
+        }
+        else if($(this).hasClass("active")){
+          $(this).removeClass("active");
+          $(".classes-tab[tag=All]").addClass("active");
+          $(".event-wrapper").show(200);
+          $(".event-location-date-row").show(200);
+        }else{
+          $(".classes-tab.active").removeClass("active");
+          $(".event-wrapper").hide(200);
+          $(".event-location-date-row").hide(200);
+
+          $(this).addClass("active");
+          console.log(".event-location-date-row[location*='"+$(this).attr("tag")+"']");
+          $(".event-wrapper[location*='"+$(this).attr("tag")+"']").show(200);
+          $(".event-location-date-row[location*='"+$(this).attr("tag")+"']").show(200);
+        }
+      });
+    }catch(e){console.log(e);}
+    
+
+	// MailChimp Ajax Page Subscription
+    $("#mailchimp-newsletter-form").submit(function(e){
+      e.preventDefault();
+      $.ajax({
+            url:$(this).attr("action"),
+            type:$(this).attr("method"),
+            data:{
+              EMAIL:$(this).find("#email").val()
+            },
+            dataType:'json',
+            contentType: "application/json; charset=utf-8",
+            error:function(data){
+             console.log("error",data);
+              
+            },
+            success:function(data){
+             console.log("success",data.msg);
+              $(".hbspt-form").empty();
+              $(".hbspt-form").html(data.msg);
+            }
+        });
+    });
+    
+      /*cart attributes */
+      $('#attributes-gift').change(function (e) {
+
+          var $target = $(e.target);
+          var $container = $($target.data('container'));
+
+          if ($target.prop('checked')) {
+              $container.find('.field').each(function (index) {
+                  $(this).prop('disabled', false);
+              });
+              $container.slideDown(function () {
+                  //CartView.prototype.saveAttributes();
+              });
+          } else {
+              $container.slideUp(function () {
+                  $container.find('.field').each(function (index) {
+                      $(this).prop('disabled', true);
+                  });
+                  //CartView.prototype.saveAttributes();
+              });
+          }
+      });
+
+
+      //search 
+
+      var wHeight = window.innerHeight;
+      //search bar middle alignment
+      $("#mk-fullscreen-searchform").css('top', wHeight / 4);
+      //reform search bar
+      $(window).resize(function () {
+          wHeight = window.innerHeight;
+          $("#mk-fullscreen-searchform").css('top', wHeight / 2);
+      });
+      // Search
+      
+      $(".search-button").click(function () {
+          console.log("Open Search, Search Centered");
+          $("div.mk-fullscreen-search-overlay").addClass("mk-fullscreen-search-overlay-show");
+          setTimeout ( function timeoutFunction () {
+        /* show the cursor */
+       $(".search-focus").focus();
+    }, 100);
+         
+          
+      });
+      $("a.mk-fullscreen-close").click(function () {
+          console.log("Closed Search");
+          $("div.mk-fullscreen-search-overlay").removeClass("mk-fullscreen-search-overlay-show");
+      });
+       $(document).keydown(function(e){
+
+        if(e.keyCode == 27) {
+             $("div.mk-fullscreen-search-overlay").removeClass("mk-fullscreen-search-overlay-show");
+        }
+    });
+     
+
+      // page layout work
+
+      productImage();
+      //  productWindow();
+      // page layout work
+      window.onresize = function (event) {
+          //productWindow();
+          //close it when resize to reveal desktop sidebar
+          //closeSidebar();
+          productImage();
+      };
+
+
+      // Sidebar Drawer
+      $(".menu-button").on("click tap", function () {
+          var mq = window.matchMedia("(min-width: 950px)");
+          if (mq.matches) {
+
+          } else {
+              toggleSidebar();
+          }
+      });
+      //close sidebar
+      $(".close-sidebar").on("click tap", function () {
+          closeSidebar();
+          closeFilterbar();
+      });
+
+      //reveal slider on load
+      $("#filter-slider").removeClass('hide');
+
+      // & close it on escape key
+      $(document).keyup(function (e) {
+          if (e.keyCode === 27) {
+              closeSidebar();
+              closeFilterbar();
+          }
+      });
+
+
+      // The Grind Guide
+      function toggleGrindGuide(el) {
+          var closeText = $('.grind-guide-button');
+          $('#grind-guide').toggleClass("hidden visible");
+          //$('#product-content').toggleClass("hidden visible");
+          if ($('#grind-guide').hasClass('visible')) {
+              closeText.text('CLOSE GRIND GUIDE');
+          } else {
+              closeText.text('VIEW GRIND GUIDE');
+          }
+          // Resize the product window with a delay to catch the new size
+          setTimeout(productWindow, 100);
+      }
+      $('.grind-guide-button , .grind-guide-close').click(function () {
+          toggleGrindGuide($(this));
+      });
+      //initiate sliders
+      $('.featured-slider').unslider();
+      //get roast from cookie taken on click of the slider - script is on the slider page
+      var roastMem = localStorage['roastMemory'];
+      //start slider and start at at the roast
+      $('.filter-slider').flickity({
+          // options
+          cellAlign: 'left',
+          contain: true,
+          pageDots: false,
+          initialIndex: roastMem,
+      });
+      // header on scroll add background
+      var scroll_pos = 0;
+    if(window.location.pathname.split('/').slice(-1)[0].length !=0){
+       $(document).scroll(function () {
+          scroll_pos = $(this).scrollTop();
+        if (scroll_pos > 20) {
+              $(".desktop-menu").removeClass("no-bg");
+              $(".desktop-menu").addClass("white-bg");
+          } else {
+              $(".desktop-menu").removeClass("white-bg");
+              $(".desktop-menu").addClass("no-bg");
+          }
+      });
+    }
+     
+      // filter drawer
+      function closeFilterbar() {
+          $('#filter-drawer').removeClass('slide-out-left');
+          $('#blacken').removeClass('reveal');
+          $('#PageContainer').removeClass('no-scroll');
+          $('body').removeClass('js-drawer-open');
+      }
+
+      function toggleDrawer() {
+          $('#filter-drawer').toggleClass('slide-out-left');
+          $('#blacken').toggleClass('reveal');
+          $('#PageContainer').toggleClass('no-scroll');
+          $('body').toggleClass('js-drawer-open');
+      }
+      $('.advanced-filter-button').click(function () {
+          toggleDrawer()
+      });
+      $('.filter-close-button,  #blacken').click(function () {
+          closeFilterbar()
+      });
+
+      //basic filter carousel
+
+      $('.roast-link').click(function () {
+          var roast = $(this).data('id');
+          localStorage['roastMemory'] = roast;
+          parseInt(localStorage['roastMemory'], 10)
+          var roastMem = localStorage['roastMemory']
+      });
+
+      $('.roast-link-menu').click(function () {
+          var roast = $(this).data('id');
+          localStorage['roastMemory'] = roast;
+          parseInt(localStorage['roastMemory'], 10)
+          var roastMem = localStorage['roastMemory']
+      });
+
+      // colour match for finding dominant colour of hero image and applying 
+      // the necessary class to the header menu so the text is visible
+
+      function darkOrLight($img, data) {
+          var containerID = "#" + ($img.context.id);
+          if ($(containerID).hasClass('ab-dark')) {
+              $('.header-icon , .header-button, .header-back-button, .header-link').removeClass('dark');
+              $('.header-icon , .header-button, .header-back-button, .header-link').addClass('light');
+
+
+          } else {
+              $('.header-icon , .header-button, .header-back-button, .header-link').removeClass('light');
+              $('.header-icon , .header-button, .header-back-button, .header-link').addClass('dark');
+
+          }
+      }
+
+      $.adaptiveBackground.run({
+          success: function ($img, data) {
+              console.log('Success!', $img, data);
+//             	console.log(window.parent.$("#frame_CmDHIrNpmlc4m8zryHlc-w").context.forms[0]);
+                
+              darkOrLight($img, data);
+          }
+
+      });
+    
+//     window.parent.$("#frame_CmDHIrNpmlc4m8zryHlc-w").context.forms[0].submit(function(){
+//       alert("The button was clicked.");
+//     });
+    
+//     window.parent.$("#frame_CmDHIrNpmlc4m8zryHlc-w").context.forms[0].submit(function( event ) {
+//       alert( "Handler for .submit() called." );
+//       event.preventDefault();
+//     });
+
+      //Filter sliders w Jquery UI
+
+
+      var filters = [];
+      var filterstring;
+      var arrayLength = filters.length;
+
+      function createFilterString() {
+          filterstring = "";
+          for (var i = 0; i < 3; i++) {
+              if (filters[i] === undefined) {
+                  // console.log('filters[' + i + '] is empty');
+              } else {
+                  filterstring += "+" + filters[i];
+              }
+          }
+          filterstring = filterstring.substring(1);
+      }
+
+
+      //apply the created filter
+      $('.save-filter').click(function () {
+          storeFilterString();
+          location.href = "/collections/coffee/" + filterstring;
+      });
+
+      $('.clear-filter').click(function () {
+          filterData = [0, 0, 0];
+          storeFilterString();
+          location.href = "/collections/coffee/";
+      });
+
+
+      var filterData = []; //var filterData;
+      function retrieveStoredFilters() {
+          if (localStorage["storedFilters"]) {
+              var retrievedFilterData = localStorage.getItem("storedFilters");
+              var filterINT = (JSON.parse(retrievedFilterData));
+              for (var i = 0; i < 3; i++) {
+                  filterData[i] = filterINT[i];
+              }
+          } else {
+              filterData = [0, 0, 0];
+          }
+          runsliders();
+      }
+      retrieveStoredFilters();
+
+
+      //in memory so the filters are applied on start
+      var storedFilters;
+
+      function storeFilterString() {
+          localStorage["storedFilters"] = JSON.stringify(filterData);
+      }
+
+      // work on the sliders
+      function runsliders() {
+          var roast = ['All', 'Light', 'Medium', 'Dark'];
+          var roastTags = [undefined, 'light-roast', 'medium-roast', 'dark-roast']
+          var selectedRoast;
+
+          $("#roast-filter-slider").slider({
+              value: filterData[0],
+              min: 0,
+              max: 3,
+              step: 1,
+              create: function (event, ui) {
+                  $(this).slider('value', filterData[0]);
+                  $('#selectedRoast').text(roast[filterData[0]]);
+                  selectedRoast = roastTags[filterData[0]];
+                  filters[0] = selectedRoast;
+                  createFilterString();
+              },
+              slide: function (event, ui) {
+                  $('#selectedRoast').text(roast[ui.value]);
+                  selectedRoast = roastTags[ui.value];
+                  filters[0] = selectedRoast;
+                  createFilterString();
+                  filterData[0] = ui.value;
+              }
+          }).each(function () {
+              //
+              // Add labels to slider whose values 
+              // are specified by min, max and whose
+              // step is set to 1
+              //
+              // Get the options for this slider
+              var opt = $(this).data().uiSlider.options;
+              // Get the number of possible values
+              var vals = opt.max - opt.min;
+              // Space out values
+              for (var i = 0; i <= vals; i++) {
+                  var el = $('<span class="pip"></span>').css('left', (i / vals * 100) + '%');
+                  $("#roast-filter-slider").append(el);
+              }
+
+          });
+          var acidity = ['Any', 'Low', 'Moderate', 'High'];
+          var acidityTags = [undefined, 'low-acidity', 'moderate-acidity', 'high-acidity']
+          var selectedAcidity;
+          $("#acidity-filter-slider").slider({
+              value: filterData[1],
+              min: 0,
+              max: 3,
+              step: 1,
+              create: function (event, ui) {
+                  $(this).slider('value', filterData[1]);
+                  $('#selectedAcidity').text(acidity[filterData[1]]);
+                  selectedAcidity = acidityTags[filterData[1]];
+                  filters[1] = selectedAcidity;
+                  createFilterString();
+              },
+              slide: function (event, ui) {
+                  $('#selectedAcidity').text(acidity[ui.value]);
+                  selectedAcidity = acidityTags[ui.value];
+                  filters[1] = selectedAcidity;
+                  createFilterString();
+                  filterData[1] = ui.value;
+
+              }
+          }).each(function () {
+              //
+              // Add labels to slider whose values 
+              // are specified by min, max and whose
+              // step is set to 1
+              //
+              // Get the options for this slider
+              var opt = $(this).data().uiSlider.options;
+              // Get the number of possible values
+              var vals = opt.max - opt.min;
+              // Space out values
+              for (var i = 0; i <= vals; i++) {
+                  var el = $('<span class="pip"></span>').css('left', (i / vals * 100) + '%');
+                  $("#acidity-filter-slider").append(el);
+              }
+          });
+          var bitterness = ['Any', 'Minimal', 'Moderate', 'High'];
+          var bitternessTags = [undefined, 'low-bitterness', 'moderate-bitterness', 'high-bitterness']
+          var selectedBitterness;
+          $("#bitterness-filter-slider").slider({
+              value: filterData[2],
+              min: 0,
+              max: 3,
+              step: 1,
+              create: function (event, ui) {
+                  $(this).slider('value', filterData[2]);
+                  $('#selectedBitterness').text(bitterness[filterData[2]]);
+                  selectedBitterness = bitternessTags[filterData[2]];
+                  filters[2] = selectedBitterness;
+                  createFilterString();
+              },
+              slide: function (event, ui) {
+                  $('#selectedBitterness').text(bitterness[ui.value]);
+                  selectedBitterness = bitternessTags[ui.value];
+                  filters[2] = selectedBitterness;
+                  createFilterString();
+                  filterData[2] = ui.value;
+
+              }
+          }).each(function () {
+              //
+              // Add labels to slider whose values 
+              // are specified by min, max and whose
+              // step is set to 1
+              //
+              // Get the options for this slider
+              var opt = $(this).data().uiSlider.options;
+              // Get the number of possible values
+              var vals = opt.max - opt.min;
+              // Space out values
+              for (var i = 0; i <= vals; i++) {
+                  var el = $('<span class="pip"></span>').css('left', (i / vals * 100) + '%');
+                  $("#bitterness-filter-slider").append(el);
+              }
+          });
+
+      }
+
+      /* 
+      $(".selectmenu").selectmenu({
+           width: "100%"
+       });
+       */
+      //$(".quantity-spinner").spinner();
+
+      //SVG replace with inline svg code
+      /*
+       * Replace all SVG images with inline SVG
+       */
+      $('img.svg').each(function () {
+          var $img = jQuery(this);
+          var imgID = $img.attr('id');
+          var imgClass = $img.attr('class');
+          var imgURL = $img.attr('src');
+          $.get(imgURL, function (data) {
+              // Get the SVG tag, ignore the rest
+              var $svg = jQuery(data).find('svg');
+              // Add replaced image's ID to the new SVG
+              if (typeof imgID !== 'undefined') {
+                  $svg = $svg.attr('id', imgID);
+              }
+              // Add replaced image's classes to the new SVG
+              if (typeof imgClass !== 'undefined') {
+                  $svg = $svg.attr('class', imgClass + ' replaced-svg');
+              }
+              // Remove any invalid XML tags as per http://validator.w3.org
+              $svg = $svg.removeAttr('xmlns:a');
+              // Replace image with new SVG
+              $img.replaceWith($svg);
+          }, 'xml');
+      });
+
+      /*============================================================================
+      scroll to
+      ==============================================================================*/
+      $(".scroll-section1").click(function () {
+          $.scrollTo('#section-1', 800, {
+              easing: 'swing',
+              offset: -83
+          });
+
+      });
+
+      $(".scroll-footer").click(function () {
+          $.scrollTo('footer', 800, {
+              easing: 'swing',
+              offset: -83
+          });
+
+      });
+
+      $(".scroll-description").click(function () {
+          $.scrollTo('.product-description', 800, {
+              easing: 'swing',
+              offset: -83
+          });
+
+      });
+
+      $(".scroll-buy").click(function () {
+          $.scrollTo('.product-buy', 800, {
+              easing: 'swing',
+              offset: -83
+          });
+
+      });
+
+      $(".scroll-farm-description").click(function () {
+          $.scrollTo('.farm-description', 800, {
+              easing: 'swing',
+              offset: -83
+          });
+
+      });
+
+      $(".scroll-learn-description").click(function () {
+          $.scrollTo('.learn-description', 800, {
+              easing: 'swing',
+              offset: -83
+          });
+
+      });
+
+      $(".scroll-careers-description").click(function () {
+          $.scrollTo('.careers-description', 800, {
+              easing: 'swing',
+              offset: -83
+          });
+
+      });
+
+      $(".scroll-wholesale-description").click(function () {
+          $.scrollTo('.wholesale-description', 800, {
+              easing: 'swing',
+              offset: -83
+          });
+
+      });
+
+
+
+      $(".filter-button-text").click(function () {
+          $.scrollTo('.shop-products', 800, {
+              easing: 'swing',
+              offset: 0
+          });
+
+      });
+
+      $(".mobile-store-link").click(function () {
+          $('.cd-accordion-menu').scrollTo('.mobile-store-link', 1000, {
+              easing: 'swing',
+              interrupt: true,
+
+          });
+
+      });
+
+      $(".mobile-learn-link").click(function () {
+          $('.cd-accordion-menu').scrollTo('.mobile-learn-link', 1000, {
+              easing: 'swing',
+              interrupt: true,
+
+          });
+
+      });
+
+      $(".mobile-farms-link").click(function () {
+
+          $('.cd-accordion-menu').scrollTo('.mobile-farms-link', 1000, {
+              easing: 'swing',
+              interrupt: true,
+          });
+
+      });
+
+      $(".mobile-cafes-link").click(function () {
+
+          $('.cd-accordion-menu').scrollTo('.mobile-cafes-link', 1000, {
+              easing: 'swing',
+              interrupt: true,
+          });
+      });
+
+      $(".mobile-account-link").click(function () {
+          $('.cd-accordion-menu').scrollTo('.mobile-account-link', 1000, {
+              easing: 'swing',
+              interrupt: true,
+          });
+
+
+      });
+    
+    let serverObject = {
+      mobile:null,
+      coffee_code:null
+    }
+    
+    $("#lpmodalclose").click(function(e) {
+      $("#lpopenModal").addClass("hidden");
+    });
+    
+     $("#lpmodalclose_pin").click(function(e) {
+      $("#lpopenModal").addClass("hidden");
+      sessionStorage.setItem("pantry_serviceability", "denied");
+    });
+    
+    
+    $("#lpresendOTP").click(function(e) {
+    	e.preventDefault();
+      	console.log(serverObject);
+      var requestdata = {
+         mobile: serverObject.mobile,
+      }
+        $.ajax({
+            type: "POST",
+            url: "https://promo.bluetokaicoffee.com/apis/resendotp",
+            data: JSON.stringify(requestdata),
+            success: function(result) {
+              if(!result.success){
+                $("#lpFormError").html ("<div>" + result.msg + "</div>");
+              } else {
+                $("#lpFormError").html ("<div>" + result.msg + "</div>");
+              }
+            },
+            error: function(result) {
+                alert('error');
+            }
+        });
+	});
+    
+  
+   
+    // landing page Ajax Page Subscription
+    $("#lpContactform").submit(function(e){
+      e.preventDefault();
+      
+      $("#lpsubmitBtn").attr("disabled", true);
+      
+      console.log($(this).attr("method"),
+                  $(this).find("#lpContactFormPhone").val(), 
+                 $(this).find("#lpContactFormName").val(),
+        $(this).find("#lpContactFormEmail").val());
+      
+      var url = "https://promo.bluetokaicoffee.com/apis/createuser";
+      
+      var otp = $(this).find("#lpContactFormOTP").val(),
+      	mobile = $(this).find("#lpContactFormPhone").val(),
+       	name =  $(this).find("#lpContactFormName").val(),
+        email = $(this).find("#lpContactFormEmail").val(),
+      city = $(this).find("#lpContactFormCity").val();
+      
+      console.log(otp);
+     
+      
+      if(!otp){
+        
+         var requestdata = {
+         	mobile:mobile,
+            name:name,
+            email:email,
+           city:city
+      }
+      
+      console.log(requestdata);
+       
+      $.ajax({
+        	//msg91 url post call for 
+            url:url,
+            type:$(this).attr("method"),
+            data:JSON.stringify(requestdata),
+            contentType: "application/json",
+            error:function(data){
+             console.log("error",data);
+              $("#lpsubmitBtn").attr("disabled", false);
+                 $("#lpFormError").html ("<div>Server error occured</div>"); 
+              
+            },
+            success:function(data){
+              //check the success data structure
+              //if success , show otp ui and hold the response mobile and otp in a variable
+             
+                $("#lpsubmitBtn").attr("disabled", false);
+              if(data.success){
+                
+                  $("#lpotp").show(500,function(){
+                 $("#lpotp").removeClass("hidden");  
+                 $("#lpresendOTP").removeClass("hidden");
+                  serverObject.mobile = data.data.mobile;
+
+                });
+              } else {
+                
+                 $("#lpFormError").html ("<div>" + data.msg + "</div>");
+              }
+             console.log("success",data);
+            }
+        });
+      } else {
+       		// we have otp 
+         	//check otp in verify user call
+           //get the coupon code and show it in the modal ui
+        
+          var requestdata = {
+               mobile: serverObject.mobile,
+           	 otp:$(this).find("#lpContactFormOTP").val()
+          }
+          
+         var url = "https://promo.bluetokaicoffee.com/apis/verifyuser";
+      
+      	console.log(requestdata);
+        
+           $.ajax({
+        	//msg91 url post call for 
+            url:url,
+            type: "POST",
+            data:JSON.stringify(requestdata),
+            contentType: "application/json",
+            error:function(data){
+             console.log("error",data);
+                $("#lpsubmitBtn").attr("disabled", false);
+                 $("#lpFormError").html ("<div>Server error occured</div>"); 
+              
+            },
+            success:function(data){
+              //check the success data structure
+              //if success , show otp ui and hold the response mobile and otp in a variable
+             
+                console.log("success",data);
+                $("#lpsubmitBtn").attr("disabled", false);
+              if(data.success){
+                serverObject.coffee_code = data.data.couponcode;
+                 $('<p>' + serverObject.coffee_code + '</p>').appendTo('#lpModalcode');
+                
+                  var screenWidth = window.screen.width;
+                   var screenHeight = window.screen.height;
+                   console.log(screenWidth, screenHeight);
+
+                  
+                $('html, body').animate({scrollTop:0},500);
+                 $("#lpopenModal").removeClass("hidden");  
+            
+              } else {
+                
+                 $("#lpFormError").html ("<div>" + data.msg + "</div>");
+              }
+           
+            }
+        });
+        
+      }
+    
+      
+   
+      
+    });
+
+ setTimeout(function() {
+    $('.product-images-section .product-images-slider .owl-stage-outer').fadeIn();
+    $('.product-images-section .product-images-slider .owl-nav').fadeIn();
+    $('.product-images-section .slider-loader').remove();
+  }, 2000);
+
+    var url = window.location.href;
+    if(url == 'https://bluetokaicoffee.com/'){
+    history.scrollRestoration = 'manual';
+    window.onbeforeunload = function () {
+            //window.scrollTo(0, 0);
+      window.scrollTo({top: 0, behavior: 'smooth'});
+    }
+    } 
+    
+
+  });

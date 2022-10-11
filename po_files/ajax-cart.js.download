@@ -1,0 +1,1868 @@
+/*============================================================================
+  Ajax the add to cart experience by revealing it in a side drawer
+  Plugin Documentation - http://shopify.github.io/Timber/#ajax-cart
+  (c) Copyright 2015 Shopify Inc. Author: Carson Shold (@cshold). All Rights Reserved.
+
+  This file includes:
+    - Basic Shopify Ajax API calls
+    - Ajax cart plugin
+
+  This requires:
+    - jQuery 1.8+
+    - handlebars.min.js (for cart template)
+    - modernizr.min.js
+    - snippet/ajax-cart-template.liquid
+
+  Customized version of Shopify's jQuery API
+  (c) Copyright 2009-2015 Shopify Inc. Author: Caroline Schnapp. All Rights Reserved.
+==============================================================================*/
+if ((typeof ShopifyAPI) === 'undefined') { ShopifyAPI = {}; }
+
+/*============================================================================
+  API Helper Functions
+==============================================================================*/
+function attributeToString(attribute) {
+  if ((typeof attribute) !== 'string') {
+    attribute += '';
+    if (attribute === 'undefined') {
+      attribute = '';
+    }
+  }
+  return jQuery.trim(attribute);
+};
+
+/*============================================================================
+  API Functions
+==============================================================================*/
+ShopifyAPI.onCartUpdate = function(cart) {
+  // alert('There are now ' + cart.item_count + ' items in the cart.');
+};
+
+ShopifyAPI.updateCartNote = function(note, callback) {
+  var $body = $(document.body),
+  params = {
+    type: 'POST',
+    url: '/cart/update.js',
+    data: 'note=' + attributeToString(note),
+    dataType: 'json',
+    beforeSend: function() {
+      $body.trigger('beforeUpdateCartNote.ajaxCart', note);
+    },
+    success: function(cart) {
+      if ((typeof callback) === 'function') {
+        callback(cart);
+      }
+      else {
+        ShopifyAPI.onCartUpdate(cart);
+      }
+      $body.trigger('afterUpdateCartNote.ajaxCart', [note, cart]);
+    },
+    error: function(XMLHttpRequest, textStatus) {
+      $body.trigger('errorUpdateCartNote.ajaxCart', [XMLHttpRequest, textStatus]);
+      ShopifyAPI.onError(XMLHttpRequest, textStatus);
+    },
+    complete: function(jqxhr, text) {
+      $body.trigger('completeUpdateCartNote.ajaxCart', [this, jqxhr, text]);
+    }
+  };
+  jQuery.ajax(params);
+};
+
+ShopifyAPI.onError = function(XMLHttpRequest, textStatus) {
+  var data = eval('(' + XMLHttpRequest.responseText + ')');
+  if (!!data.message) {
+    alert(data.message + '(' + data.status  + '): ' + data.description);
+  }
+};
+
+/*============================================================================
+  POST to cart/add.js returns the JSON of the cart
+    - Allow use of form element instead of just id
+    - Allow custom error callback
+==============================================================================*/
+ShopifyAPI.addItemFromForm = function(form, callback, errorCallback) {
+    console.log(jQuery(form).serialize()); 
+  var $body = $(document.body),
+   
+  params = {
+    type: 'POST',
+    url: '/cart/add.js',
+    data: jQuery(form).serialize(),
+    dataType: 'json',
+    beforeSend: function(jqxhr, settings) {
+      $body.trigger('beforeAddItem.ajaxCart', form);
+    },
+    success: function(line_item) {
+      if ((typeof callback) === 'function') {
+        callback(line_item, form);
+        
+      }
+      else {
+		console.log("callback not called");
+        ShopifyAPI.onItemAdded(line_item, form);
+      }
+      $body.trigger('afterAddItem.ajaxCart', [line_item, form]);
+    },
+    error: function(XMLHttpRequest, textStatus) {
+      if ((typeof errorCallback) === 'function') {
+        errorCallback(XMLHttpRequest, textStatus);
+      }
+      else {
+        ShopifyAPI.onError(XMLHttpRequest, textStatus);
+      }
+      $body.trigger('errorAddItem.ajaxCart', [XMLHttpRequest, textStatus]);
+    },
+    complete: function(jqxhr, text) {
+      $body.trigger('completeAddItem.ajaxCart', [this, jqxhr, text]);
+    }
+  };
+  jQuery.ajax(params);
+};
+
+// Get from cart.js returns the cart in JSON
+ShopifyAPI.getCart = function(callback) {
+  console.log("getCart called with timestamp");
+  $(document.body).trigger('beforeGetCart.ajaxCart');
+/*  jQuery.getJSON('/cart.js', function (cart, textStatus) {
+    if ((typeof callback) === 'function') {
+      callback(cart);
+    }
+    else {
+      ShopifyAPI.onCartUpdate(cart);
+    }
+    $(document.body).trigger('afterGetCart.ajaxCart', cart);
+  });*/
+  
+  $.ajax({
+    url:"/cart.js?nocache="+(new Date()).getTime(),
+    type:"get",
+    dataType:"json",
+    cache:false,
+    success:function(cart){
+      if ((typeof callback) === 'function') {
+	      callback(cart);
+      }
+      else {
+        ShopifyAPI.onCartUpdate(cart);
+      }
+      $(document.body).trigger('afterGetCart.ajaxCart', cart);
+    }
+  });  
+};
+
+// POST to cart/change.js returns the cart in JSON
+ShopifyAPI.changeItem = function(line, quantity, callback) {
+  var $body = $(document.body),
+  params = {
+    type: 'POST',
+    url: '/cart/change.js',
+    data: 'quantity=' + quantity + '&line=' + line,
+    dataType: 'json',
+    beforeSend: function() {
+      $body.trigger('beforeChangeItem.ajaxCart', [line, quantity]);
+    },
+    success: function(cart) {
+      if ((typeof callback) === 'function') {
+        callback(cart);
+      }
+      else {
+        ShopifyAPI.onCartUpdate(cart);
+      }
+      $body.trigger('afterChangeItem.ajaxCart', [line, quantity, cart]);
+    },
+    error: function(XMLHttpRequest, textStatus) {
+      $body.trigger('errorChangeItem.ajaxCart', [XMLHttpRequest, textStatus]);
+      ShopifyAPI.onError(XMLHttpRequest, textStatus);
+    },
+    complete: function(jqxhr, text) {
+      $body.trigger('completeChangeItem.ajaxCart', [this, jqxhr, text]);
+    }
+  };
+  jQuery.ajax(params);
+};
+
+/*============================================================================
+  Ajax Shopify Add To Cart
+==============================================================================*/
+var ajaxCart = (function(module, $) {
+
+  'use strict';
+
+  // Public functions
+  var init, loadCart;
+
+  // Private general variables
+  var settings, isUpdating, $body;
+
+  // Private plugin variables
+  var $formContainer, $addToCart, $cartCountSelector, $cartCostSelector, $cartContainer, $drawerContainer;
+
+  // Private functions
+  var updateCountPrice, formOverride, itemAddedCallback, itemErrorCallback, cartUpdateCallback, buildCart, cartCallback, adjustCart, adjustCartCallback, createQtySelectors, qtySelectors, validateQty;
+
+  /*============================================================================
+    Initialise the plugin and define global options
+  ==============================================================================*/
+  init = function (options) {
+
+    // Default settings
+    settings = {
+      formSelector       : 'form[action^="/cart/add"]',
+      cartContainer      : '#CartContainer',
+      addToCartSelector  : 'input[type="submit"]',
+      cartCountSelector  : null,
+      cartCostSelector   : null,
+      moneyFormat        : '$',
+      disableAjaxCart    : false,
+      enableQtySelectors : true
+    };
+
+    // Override defaults with arguments
+    $.extend(settings, options);
+
+    // Select DOM elements
+    $formContainer     = $(settings.formSelector);
+    $cartContainer     = $(settings.cartContainer);
+    $addToCart         = $formContainer.find(settings.addToCartSelector);
+    $cartCountSelector = $(settings.cartCountSelector);
+    $cartCostSelector  = $(settings.cartCostSelector);
+
+    // General Selectors
+    $body = $(document.body);
+
+    // Track cart activity status
+    isUpdating = false;
+
+    // Setup ajax quantity selectors on the any template if enableQtySelectors is true
+    if (settings.enableQtySelectors) {
+      qtySelectors();
+    }
+
+    // Take over the add to cart form submit action if ajax enabled
+    if (!settings.disableAjaxCart && $addToCart.length) {
+      formOverride();
+    }
+
+    // Run this function in case we're using the quantity selector outside of the cart
+    adjustCart();
+  };
+
+  loadCart = function () {
+    $body.addClass('drawer--is-loading');
+    ShopifyAPI.getCart(cartUpdateCallback);
+  };
+
+  updateCountPrice = function (cart) {
+    if ($cartCountSelector) {
+      $cartCountSelector.html(cart.item_count).removeClass('hidden-count');
+
+      if (cart.item_count === 0) {
+        $cartCountSelector.addClass('hidden-count');
+      }
+    }
+    if ($cartCostSelector) {
+      $cartCostSelector.html(Shopify.formatMoney(cart.total_price, settings.moneyFormat));
+    }
+  };
+
+  formOverride = function () {
+    $formContainer.on('submit', function(evt) {
+      evt.preventDefault();
+	
+      // Add class to be styled if desired
+      $addToCart.removeClass('is-added').addClass('is-adding');
+
+      // Remove any previous quantity errors
+      $('.qty-error').remove();
+      try{
+        if($(evt.target).find("input[name='properties[equipment]']").length>0){
+           console.log("equipment");
+          var available_quantity=eval($(evt.target).find("input[name='properties[equipment]']").attr('inventory_quantity'));
+          console.log("available_quantity:",available_quantity);
+          var order_quantity=$(evt.target).find("#quantity").val();      
+          if(order_quantity>available_quantity){
+            if(available_quantity != 0){
+               $(evt.target).after($("<div/>").addClass('errors qty-error').text("You can only order "+available_quantity+" of this product."));
+            } else {
+               $(evt.target).after($("<div/>").addClass('errors qty-error').text("This Product variant is currently out of stock."));
+            }
+           
+            return;
+          }
+          console.log("order_quantity:",order_quantity);
+        }
+        
+        if($(evt.target).find("select[name='properties[equipment-1]']").length>0){
+           console.log("equipment-1");
+          var available_quantity=eval($(evt.target).find("select[name='properties[equipment-1]'] option:selected").attr('inventory_quantity'));
+          console.log("available_quantity:",available_quantity);
+          var order_quantity=$(evt.target).find("#quantity").val();
+          if(order_quantity>available_quantity){
+            if(available_quantity != 0){
+               $(evt.target).after($("<div/>").addClass('errors qty-error').text("You can only order "+available_quantity+" of this product."));
+            } else {
+               $(evt.target).after($("<div/>").addClass('errors qty-error').text("This Product variant is currently out of stock."));
+            }
+            return;
+          }
+          console.log("order_quantity:",order_quantity);
+        }
+        
+        if($(evt.target).find("select[name='properties[equipment-2]']").length>0){
+           console.log("equipment-2");
+          var available_quantity=eval($(evt.target).find("select[name='properties[equipment-2]'] option:selected").attr('inventory_quantity'));
+          console.log("available_quantity:",available_quantity);
+          var order_quantity=$(evt.target).find("#quantity").val();
+          if(order_quantity>available_quantity){
+            if(available_quantity != 0){
+               $(evt.target).after($("<div/>").addClass('errors qty-error').text("You can only order "+available_quantity+" of this product."));
+            } else {
+               $(evt.target).after($("<div/>").addClass('errors qty-error').text("This Product variant is currently out of stock."));
+            }
+            return;
+          }
+          console.log("order_quantity:",order_quantity);
+        }
+        
+        if($(evt.target).find("select[name='properties[equipment-size]']").length>0){
+          var selectedSize=$(evt.target).find("#productSelect-option-0").val();
+          var selectedColor=$(evt.target).find("#productSelect-option-1").val();
+          console.log("equipment-size");
+          console.log($(evt.target).find("#productSelect-option-0"));
+           console.log(selectedSize, selectedColor);
+           console.log($(evt.target).find("select[name='properties[equipment-size]'] option[size='"+selectedSize+" "+"/"+" "+selectedColor+"']"));
+          
+          var available_quantity=eval($(evt.target).find("select[name='properties[equipment-size]'] option[size='"+selectedSize+" "+"/"+" "+selectedColor+"']").attr('inventory_quantity'));
+          
+          console.log("available_quantity:",available_quantity);
+          var order_quantity=$(evt.target).find("#quantity").val();
+          if(order_quantity>available_quantity){
+           if(available_quantity != 0){
+               $(evt.target).after($("<div/>").addClass('errors qty-error').text("You can only order "+available_quantity+" of this product."));
+            } else {
+               $(evt.target).after($("<div/>").addClass('errors qty-error').text("This Product variant is currently out of stock."));
+            }
+            return;
+          } else {
+            $(evt.target).find("select[name='properties[equipment-size]'] option[size='"+selectedSize+" "+"/"+" "+selectedColor+"']").prop('selected',true);
+          }
+          console.log("order_quantity:",order_quantity);
+        }
+        
+        if($(evt.target).find("select[name='properties[equipment-filter-paper]']").length>0){
+           console.log("equipment-filter-paper");
+          var selectedFilterPaper=$(evt.target).find("#productSelect-option-0").val();
+          if($(evt.target).find("select[name='properties[equipment-filter-paper]'] option[value~='"+selectedFilterPaper+"']").length==0){
+          	available_quantity=0;
+          }else{
+          	var available_quantity=eval($(evt.target).find("select[name='properties[equipment-filter-paper]'] option[value~='"+selectedFilterPaper+"']").attr('inventory_quantity'));
+	        $(evt.target).find("select[name='properties[equipment-filter-paper]'] option[value~='"+selectedFilterPaper+"']").prop('selected',true);
+          }
+          console.log("available_quantity:",available_quantity);
+          var order_quantity=$(evt.target).find("#quantity").val();
+          if(order_quantity>available_quantity){
+            $(evt.target).after($("<div/>").addClass('errors qty-error').text("You can only order "+available_quantity+" of this product."));
+            return;
+          }
+          console.log("order_quantity:",order_quantity);
+        }
+        
+        if($(evt.target).find("select[name='properties[equipment-color]']").length>0){
+          console.log("Enquipment color defined");
+          var selectedColor=$(evt.target).find("#productSelect-option-0").val();
+          console.log("Selected color: "+selectedColor);
+          if($(evt.target).find("select[name='properties[equipment-color]'] option[value*='"+selectedColor+"']").length==0){
+            console.log('Color not found');
+          	available_quantity=20;
+            //for Munkesh//
+          }else{
+            console.log('Color found');
+          	var available_quantity=eval($(evt.target).find("select[name='properties[equipment-color]'] option[value*='"+selectedColor+"']").attr('inventory_quantity'));
+            $(evt.target).find("select[name='properties[equipment-color]'] option[value*='"+selectedColor+"']").prop('selected',true);
+          }
+          console.log("available_quantity:",available_quantity);
+          var order_quantity=$(evt.target).find("#quantity").val();
+          if(order_quantity>available_quantity){
+            if(available_quantity != 0){
+               $(evt.target).after($("<div/>").addClass('errors qty-error').text("You can only order "+available_quantity+" of this product."));
+            } else {
+               $(evt.target).after($("<div/>").addClass('errors qty-error').text("This Product variant is currently out of stock."));
+            }
+            return;
+          }
+          console.log("order_quantity:",order_quantity);
+        }
+      
+        if($(evt.target).find("select[name='properties[coffee-1]']").length>0){
+          if($(evt.target).find("select[name='properties[coffee-1]']").val()==null){
+            $(evt.target).after($("<div/>").addClass('errors qty-error').text("Please select coffee-1."));
+            return;
+          }
+        }
+        if($(evt.target).find("select[name='properties[coffee-2]']").length>0){
+          if($(evt.target).find("select[name='properties[coffee-2]']").val()==null){
+            $(evt.target).after($("<div/>").addClass('errors qty-error').text("Please select coffee-2."));
+            return;
+          }
+        }
+        if($(evt.target).find("select[name='properties[coffee-3]']").length>0){
+          if($(evt.target).find("select[name='properties[coffee-3]']").val()==null){
+            $(evt.target).after($("<div/>").addClass('errors qty-error').text("Please select coffee-3."));
+            return;
+          }
+        }
+        if($(evt.target).find("select[name='properties[coffee-4]']").length>0){
+          if($(evt.target).find("select[name='properties[coffee-4]']").val()==null){
+            $(evt.target).after($("<div/>").addClass('errors qty-error').text("Please select coffee-4."));
+            return;
+          }
+        }
+        if($(evt.target).find("select[name='properties[coffee-5]']").length>0){
+          if($(evt.target).find("select[name='properties[coffee-5]']").val()==null){
+            $(evt.target).after($("<div/>").addClass('errors qty-error').text("Please select coffee-5."));
+            return;
+          }
+        }
+        if($(evt.target).find("select[name='properties[coffee-6]']").length>0){
+          if($(evt.target).find("select[name='properties[coffee-6]']").val()==null){
+            $(evt.target).after($("<div/>").addClass('errors qty-error').text("Please select coffee-6."));
+            return;
+          }
+        }
+        
+   
+        
+        if($(evt.target).find("select[name='properties[Grind]']").length>0){
+          if($(evt.target).find("select[name='properties[Grind]']").val()==null){
+            $(evt.target).after($("<div/>").addClass('errors qty-error').text("Please select grind of the coffee."));
+            return;
+          }
+        }
+      }catch(e){
+        console.log(e);
+      }
+      ShopifyAPI.addItemFromForm(evt.target, itemAddedCallback, itemErrorCallback);
+    });
+  };
+
+  itemAddedCallback = function (product) {
+    $addToCart.removeClass('is-adding').addClass('is-added');
+
+    ShopifyAPI.getCart(cartUpdateCallback);
+  };
+
+  itemErrorCallback = function (XMLHttpRequest, textStatus) {
+    var data = eval('(' + XMLHttpRequest.responseText + ')');
+    $addToCart.removeClass('is-adding is-added');
+
+    if (!!data.message) {
+      if (data.status == 422) {
+        $formContainer.after('<div class="errors qty-error">'+ data.description +'</div>')
+      }
+    }
+  };
+
+  cartUpdateCallback = function (cart) {
+    console.log("cart",cart);
+    // Update quantity and price
+    updateCountPrice(cart);
+    buildCart(cart);
+  };
+
+  buildCart = function (cart) {
+    // Start with a fresh cart div
+    $cartContainer.empty();
+   
+
+    // Show empty cart
+    if (cart.item_count === 0) {
+      $cartContainer
+        .append('<p>' + "Your cart is currently empty." + '</p>');
+      cartCallback(cart);
+      return;
+    }
+
+    // Handlebars.js cart layout
+    var items = [],
+        item = {},
+        data = {},
+        source = $("#CartTemplate").html(),
+        template = Handlebars.compile(source);
+
+    // Add each item to our handlebars.js data
+    $.each(cart.items, function(index, cartItem) {
+
+      /* Hack to get product image thumbnail
+       *   - If image is not null
+       *     - Remove file extension, add _small, and re-add extension
+       *     - Create server relative link
+       *   - A hard-coded url of no-image
+      */
+      if (cartItem.image != null){
+        var prodImg = cartItem.image.replace(/(\.[^.]*)$/, "_small$1").replace('http:', '');
+      } else {
+        var prodImg = "//cdn.shopify.com/s/assets/admin/no-image-medium-cc9732cb976dd349a0df1d39816fbcc7.gif";
+      }
+	console.log('cart item details');
+      console.log(cartItem);
+      var tags="";
+      var dtagsimg="";
+      if(cartItem.product_type ==='Coffee+FrenchPress'){
+         tags="You saved 50% on French Press @Rs 1099.50";
+          dtagsimg = "https://cdn.shopify.com/s/files/1/0738/1409/t/71/assets/french-press.png";
+         }
+      // Create item's data object and add to 'items' array
+      item = {
+        key: cartItem.key,
+        line: index + 1, // Shopify uses a 1+ index in the API
+        url: cartItem.url,
+        img: prodImg,
+        dtags: tags,
+        dtagsimg: dtagsimg,
+        name: cartItem.product_title,
+        variation: cartItem.variant_title,
+        properties: cartItem.properties,
+        itemAdd: cartItem.quantity + 1,
+        itemMinus: cartItem.quantity - 1,
+        itemQty: cartItem.quantity,
+        price: Shopify.formatMoney(cartItem.price, settings.moneyFormat),
+        vendor: cartItem.vendor,
+        linePrice: Shopify.formatMoney(cartItem.line_price, settings.moneyFormat),
+        comparedPrice: Shopify.formatMoney(cartItem.compare_at_price, settings.moneyFormat),
+        originalLinePrice: Shopify.formatMoney(cartItem.original_line_price, settings.moneyFormat),
+        discounts: cartItem.discounts,
+        discountsApplied: cartItem.line_price === cartItem.original_line_price ? false : true
+      };
+
+      items.push(item);
+    });
+
+    // Gather all cart data and add to DOM
+    data = {
+      items: items,
+      note: cart.note,
+      totalPrice: Shopify.formatMoney(cart.total_price, settings.moneyFormat),
+      totalCartDiscount: cart.total_discount === 0 ? 0 : "You're saving [savings]".replace('[savings]', Shopify.formatMoney(cart.total_discount, settings.moneyFormat)),
+      totalCartDiscountApplied: cart.total_discount === 0 ? false : true
+    }
+    
+    console.log(data);
+
+    $cartContainer.append(template(data));
+
+    cartCallback(cart);
+  };
+
+  cartCallback = function(cart) {
+    $body.removeClass('drawer--is-loading');
+    $body.trigger('afterCartLoad.ajaxCart', cart);
+
+    if (window.Shopify && Shopify.StorefrontExpressButtons) {
+      Shopify.StorefrontExpressButtons.initialize();
+    }
+  };
+
+  adjustCart = function () {
+    // Delegate all events because elements reload with the cart
+
+    // Add or remove from the quantity
+    $body.on('click', '.ajaxcart__qty-adjust', function() {
+      if (isUpdating) {
+        return;
+      }
+
+      var $el = $(this),
+          line = $el.data('line'),
+          $qtySelector = $el.siblings('.ajaxcart__qty-num'),
+          qty = parseInt($qtySelector.val().replace(/\D/g, ''));
+
+      var qty = validateQty(qty);
+
+      // Add or subtract from the current quantity
+      if ($el.hasClass('ajaxcart__qty--plus')) {
+        qty += 1;
+      } else {
+        qty -= 1;
+        if (qty <= 0) qty = 0;
+      }
+
+      // If it has a data-line, update the cart.
+      // Otherwise, just update the input's number
+      if (line) {
+        updateQuantity(line, qty);
+      } else {
+        $qtySelector.val(qty);
+      }
+    });
+
+    // Update quantity based on input on change
+    $body.on('change', '.ajaxcart__qty-num', function() {
+      if (isUpdating) {
+        return;
+      }
+
+      var $el = $(this),
+          line = $el.data('line'),
+          qty = parseInt($el.val().replace(/\D/g, ''));
+
+      var qty = validateQty(qty);
+
+      // If it has a data-line, update the cart
+      if (line) {
+        updateQuantity(line, qty);
+      }
+    });
+    
+   ////////////CUSTOM PRICING SECTION DELETE TILL END SECTION IF NOT REQUIRED(RAVEESH)
+    $body.on('change', 'select[name="properties[Coffee]"]', function() {
+var obj_3_250 = {
+  "Attikan Estate": 1320,
+  "Baarbara Estate": 1320,
+  "French Roast":1260,
+  "Mixed Bag":1320,
+  "Cold Brew Blend Bold":1320,
+  "Cold Brew Blend Light":1320,
+  "Dhak Blend":1320,
+  "Kalledeverapura Pulp Sun Dried":1210,
+  "Organic Rosewood Blend":1320,
+  "Seethargundu Estate":1290,
+  "Silver Oak Cafe Blend":1260,
+  "Vienna Roast":1260,
+  "Monsoon Malabar AA- Hoysala Estate": 1290,
+  "South Indian Filter Blend":1180,
+  "M.S. Estate Organic":1290,
+"Thogarihunkal Estate":1320,
+"Sandalwood Estate":1320
+};
+     var obj_3_500 = {
+                "Attikan Estate": 2450,
+        "Baarbara Estate": 2450,
+        "French Roast":2340,
+       "Mixed Bag":2450,
+            "Cold Brew Blend Bold":2450,
+            "Cold Brew Blend Light":2450,
+            "Dhak Blend":2450,
+            "Kalledeverapura Pulp Sun Dried":2240,
+            "Organic Rosewood Blend":2240,
+            "Seethargundu Estate":2400,
+            "Silver Oak Cafe Blend":2340,
+            "Vienna Roast":2340,
+       "Monsoon Malabar AA- Hoysala Estate": 2400,
+       "South Indian Filter Blend":2180,
+       "M.S. Estate Organic":2400,
+"Thogarihunkal Estate":2450,
+"Sandalwood Estate":2450
+
+       
+};
+var obj_3_1000 = {
+        "Attikan Estate": 4490,
+        "Baarbara Estate": 4490,
+        "French Roast":4320,
+  "Mixed Bag":4490,
+            "Cold Brew Blend Bold":4490,
+            "Cold Brew Blend Light":4490,
+            "Dhak Blend":4490,
+            "Kalledeverapura Pulp Sun Dried":4130,
+            "Organic Rosewood Blend":4130,
+            "Seethargundu Estate":4400,
+            "Silver Oak Cafe Blend":4320,
+            "Vienna Roast":4320,
+  "Monsoon Malabar AA- Hoysala Estate": 4400,
+  "South Indian Filter Blend":4050,
+  "M.S. Estate Organic":4400,
+"Thogarihunkal Estate":2450,
+"Sandalwood Estate":2450
+
+};
+          var obj_6_250 = {
+		"Attikan Estate": 2570,
+		"Baarbara Estate": 2570,
+		"French Roast":2460,
+	"Mixed Bag":2570,
+            "Cold Brew Blend Bold":2570,
+            "Cold Brew Blend Light":2570,
+            "Dhak Blend":2570,
+            "Kalledeverapura Pulp Sun Dried":2360,
+            "Organic Rosewood Blend":2360,
+            "Seethargundu Estate":2520,
+            "Silver Oak Cafe Blend":2460,
+            "Vienna Roast":2460,
+            "Monsoon Malabar AA- Hoysala Estate": 2520,
+            "South Indian Filter Blend":2310,
+             "M.S. Estate Organic":2520,
+"Thogarihunkal Estate":2570,
+"Sandalwood Estate":2570
+
+};
+   var obj_6_500 = {
+		"Attikan Estate": 4770,
+		"Baarbara Estate": 4770,
+		"French Roast":4560,
+	"Mixed Bag":4770,	
+            "Cold Brew Blend Bold":4770,
+            "Cold Brew Blend Light":4770,
+            "Dhak Blend":4770,        
+            "Kalledeverapura Pulp Sun Dried":4350,
+            "Organic Rosewood Blend":4350,
+            "Seethargundu Estate":5070,
+            "Silver Oak Cafe Blend":4560,
+            "Vienna Roast":4560,
+     "Monsoon Malabar AA- Hoysala Estate": 4670,
+     "South Indian Filter Blend":3880,
+      "M.S. Estate Organic":5070,
+"Thogarihunkal Estate":4770,
+"Sandalwood Estate":4770
+};
+                var obj_6_1000 = {
+		"Attikan Estate": 8740,
+		"Baarbara Estate": 8740,
+		"French Roast":8400,
+	"Mixed Bag":8740,
+            "Cold Brew Blend Bold":8740,
+            "Cold Brew Blend Light":8740,
+            "Dhak Blend":8740,
+            "Kalledeverapura Pulp Sun Dried":8030,
+            "Organic Rosewood Blend":8030,
+            "Seethargundu Estate":8550,
+                   "M.S. Estate Organic":8550,
+            "Silver Oak Cafe Blend":8400,
+            "Vienna Roast":8400,
+                  "Monsoon Malabar AA- Hoysala Estate": 8550,
+                  "South Indian Filter Blend":7870,
+"Thogarihunkal Estate":8740,
+"Sandalwood Estate":8740
+};
+   var obj_12_250 = {
+		"Attikan Estate": 4850,
+		"Baarbara Estate": 4850,
+		"French Roast":4650,
+	"Mixed Bag":4850,
+            "Cold Brew Blend Bold":4850,
+            "Cold Brew Blend Light":4850,
+            "Dhak Blend":4850,
+            "Kalledeverapura Pulp Sun Dried":4450,
+            "Organic Rosewood Blend":4450,
+            "Seethargundu Estate":4750,
+      "M.S. Estate Organic":4750,
+            "Silver Oak Cafe Blend":4650,
+            "Vienna Roast":4650,
+     "Monsoon Malabar AA- Hoysala Estate": 4750,
+     "South Indian Filter Blend":4350,
+"Thogarihunkal Estate":4850,
+"Sandalwood Estate":4850
+};
+                var obj_12_500 = {
+		"Attikan Estate":9000,
+			"Baarbara Estate":9000,
+			"Cold Brew Blend Bold":9000,
+			"Cold Brew Blend Light":9000,
+			"Dhak Blend":9000,
+			"French Roast":8610,
+			"Kalledeverapura Pulp Sun Dried":8210, 
+			"Organic Rosewood Blend":8210,
+			"Seethargundu Estate":8810,
+                   "M.S. Estate Organic":8810,
+			"Silver Oak Cafe Blend":8610,
+			"Vienna Roast":8610,
+			"Mixed Bag":9000,
+                  "Monsoon Malabar AA- Hoysala Estate": 8810,
+                  "South Indian Filter Blend":8010,
+"Thogarihunkal Estate":9000,
+"Sandalwood Estate":9000
+
+};
+   var obj_12_1000 = {
+		"Attikan Estate":16480,
+"Baarbara Estate":16480,
+"Cold Brew Blend Bold":16480,
+"Cold Brew Blend Light":16480,
+"Dhak Blend":16480,
+ "French Roast":15840,
+"Kalledeverapura Pulp Sun Dried":15140, 
+"Organic Rosewood Blend":15140, 
+"Seethargundu Estate":16130,
+      "M.S. Estate Organic":16130,
+"Silver Oak Cafe Blend":15840,
+"Vienna Roast":15840,
+"Mixed Bag":16480,
+     "Monsoon Malabar AA- Hoysala Estate": 16130,
+     "South Indian Filter Blend":14850,
+"Thogarihunkal Estate":16480,
+"Sandalwood Estate":16480
+
+};
+         var obj_24_250 = {
+		"Attikan Estate":9400,
+"Baarbara Estate":9400,
+"Cold Brew Blend Bold":9400,
+"Cold Brew Blend Light":9400,
+"Dhak Blend":9400,
+"French Roast":9020,
+"Kalledeverapura Pulp Sun Dried":8640, 
+"Organic Rosewood Blend":8640, 
+"Seethargundu Estate":9210,
+            "M.S. Estate Organic":9210,
+"Silver Oak Cafe Blend":9020,
+"Vienna Roast":9020, 
+"Mixed Bag":9400,
+           "Monsoon Malabar AA- Hoysala Estate": 9210,
+           "South Indian Filter Blend":8440,
+"Thogarihunkal Estate":9400,
+"Sandalwood Estate":9400
+};
+                var obj_24_500 = {
+		"Attikan Estate":17470,
+"Baarbara Estate":17470,
+"Cold Brew Blend Bold":17470,
+"Cold Brew Blend Light":17470,
+"Dhak Blend":17470,
+"Kalledeverapura Pulp Sun Dried":15930, 
+"Organic Rosewood Blend":15930, 
+"Seethargundu Estate":17080,
+                   "M.S. Estate Organic":17080,
+"Silver Oak Cafe Blend":16700,
+"Vienna Roast":16700, 
+ "French Roast":16700,
+"Mixed Bag":17470,
+                  "Monsoon Malabar AA- Hoysala Estate": 17080,
+                  "South Indian Filter Blend":15550,
+"Thogarihunkal Estate":17470,
+"Sandalwood Estate":17470
+
+};
+   var obj_24_1000 = {
+	"Attikan Estate":31960,
+		"Baarbara Estate":31960,
+		"Cold Brew Blend Bold":31960,
+		"Cold Brew Blend Light":31960,
+		"Dhak Blend":31960,
+		"Kalledeverapura Pulp Sun Dried":29370, 
+		"Organic Rosewood Blend":29370, 
+		"Seethargundu Estate":31290,
+      "M.S. Estate Organic":31290,
+		"Silver Oak Cafe Blend":30720,
+		"Vienna Roast":30720,
+     "French Roast":30720,
+		"Mixed Bag":31960,
+     "Monsoon Malabar AA- Hoysala Estate": 31290,
+     "South Indian Filter Blend":28800,
+"Thogarihunkal Estate":31960,
+"Sandalwood Estate":31960
+
+};
+
+
+      var subcheck=false;
+      var intproductprice=0;
+      let searchParams = new URLSearchParams(window.location.search);
+      $.each( meta['product']['variants'], function( key,val ) {
+        console.log(val.price);
+        //searchParams.get('variant')==val['id']  ||
+        if( $('select[id="productSelect-option-0"]').val()==val['public_title']){
+          if(val['name'].includes(6) && val['name'].includes(250)){
+            intproductprice=val.price/100;
+          intproductprice=obj_6_250[$('select[name="properties[Coffee]"]').val()];
+            subcheck=true;
+          }
+           else if(val['name'].includes(3) && val['name'].includes(250)){
+             intproductprice=val.price/100;
+            intproductprice=obj_3_250[$('select[name="properties[Coffee]"]').val()];
+            subcheck=true;
+          }
+          else if(val['name'].includes(3) && val['name'].includes(500)){
+            intproductprice=val.price/100;
+            intproductprice=obj_3_500[$('select[name="properties[Coffee]"]').val()];
+            subcheck=true;
+          }
+          else if(val['name'].includes(3) && val['name'].includes(1000)){
+            intproductprice=val.price/100;
+            intproductprice=obj_3_1000[$('select[name="properties[Coffee]"]').val()];
+            subcheck=true;
+          }
+          else if(val['name'].includes(6) && val['name'].includes(500)){
+            intproductprice=val.price/100;
+            intproductprice=obj_6_500[$('select[name="properties[Coffee]"]').val()];
+            subcheck=true;
+          }
+           else if(val['name'].includes(6) && val['name'].includes(1000)){
+             intproductprice=val.price/100;
+            intproductprice=obj_6_1000[$('select[name="properties[Coffee]"]').val()];
+             subcheck=true;
+          }
+           else if(val['name'].includes(12) && val['name'].includes(250)){
+             intproductprice=val.price/100;
+            intproductprice=obj_12_250[$('select[name="properties[Coffee]"]').val()];
+             subcheck=true;
+          }
+           else if(val['name'].includes(12) && val['name'].includes(500)){
+             intproductprice=val.price/100;
+            intproductprice=obj_12_500[$('select[name="properties[Coffee]"]').val()];
+             subcheck=true;
+          }
+           else if(val['name'].includes(12) && val['name'].includes(1000)){
+             intproductprice=val.price/100;
+            intproductprice=obj_12_1000[$('select[name="properties[Coffee]"]').val()];
+             subcheck=true;
+          }           
+          else if(val['name'].includes(24) && val['name'].includes(250)){
+            intproductprice=val.price/100;
+            intproductprice=obj_24_250[$('select[name="properties[Coffee]"]').val()];
+            subcheck=true;
+          }
+           else if(val['name'].includes(24) && val['name'].includes(500)){
+             intproductprice=val.price/100;
+            intproductprice=obj_24_500[$('select[name="properties[Coffee]"]').val()];
+             subcheck=true;
+          }
+           else if(val['name'].includes(24) && val['name'].includes(1000)){
+             intproductprice=val.price/100;
+            intproductprice=obj_24_1000[$('select[name="properties[Coffee]"]').val()];
+             subcheck=true;
+          }
+          else{
+        	intproductprice=val.price/100;
+            subcheck=true;
+          }
+        }
+		});
+      
+      
+      //var productprice=$('#ProductPrice').text();
+       // intproductprice=parseInt(productprice.replace('Rs. ','').replace(',','').replace('.00',''),10);
+if(subcheck){
+	  if(intproductprice===undefined){
+    console.log("undefined");
+  }
+  else{
+    $('#ProductPrice').text('RS. '+intproductprice);
+  }
+}
+       //$('#ProductPrice').text(intproductprice-(intproductprice*obj[$('select[name="properties[Coffee]"]').val()]*.01));
+     
+});
+        $body.on('change', 'select[id="productSelect-option-0"]', function() {
+var obj_3_250 = {
+  "Attikan Estate": 1320,
+  "Baarbara Estate": 1320,
+  "French Roast":1260,
+  "Mixed Bag":1320,
+  "Cold Brew Blend Bold":1320,
+  "Cold Brew Blend Light":1320,
+  "Dhak Blend":1320,
+  "Kalledeverapura Pulp Sun Dried":1210,
+  "Organic Rosewood Blend":1320,
+  "Seethargundu Estate":1290,
+  "Silver Oak Cafe Blend":1260,
+  "Vienna Roast":1260,
+  "Monsoon Malabar AA- Hoysala Estate": 1290,
+  "South Indian Filter Blend":1180,
+  "M.S. Estate Organic":1290,
+"Thogarihunkal Estate":1320,
+"Sandalwood Estate":1320
+};
+     var obj_3_500 = {
+        "Attikan Estate": 2450,
+        "Baarbara Estate": 2450,
+        "French Roast":2340,
+       "Mixed Bag":2450,
+            "Cold Brew Blend Bold":2450,
+            "Cold Brew Blend Light":2450,
+            "Dhak Blend":2450,
+            "Kalledeverapura Pulp Sun Dried":2240,
+            "Organic Rosewood Blend":2240,
+            "Seethargundu Estate":2400,
+            "Silver Oak Cafe Blend":2340,
+            "Vienna Roast":2340,
+       "Monsoon Malabar AA- Hoysala Estate": 2400,
+       "South Indian Filter Blend":2180,
+       "M.S. Estate Organic":2400,
+"Thogarihunkal Estate":2450,
+"Sandalwood Estate":2450
+       
+};
+var obj_3_1000 = {
+        "Attikan Estate": 4490,
+        "Baarbara Estate": 4490,
+        "French Roast":4320,
+  "Mixed Bag":4490,
+            "Cold Brew Blend Bold":4490,
+            "Cold Brew Blend Light":4490,
+            "Dhak Blend":4490,
+            "Kalledeverapura Pulp Sun Dried":4130,
+            "Organic Rosewood Blend":4130,
+            "Seethargundu Estate":4400,
+            "Silver Oak Cafe Blend":4320,
+            "Vienna Roast":4320,
+  "Monsoon Malabar AA- Hoysala Estate": 4400,
+  "South Indian Filter Blend":4050,
+  "M.S. Estate Organic":4400,
+"Thogarihunkal Estate":2450,
+"Sandalwood Estate":2450
+
+};
+          var obj_6_250 = {
+		"Attikan Estate": 2570,
+		"Baarbara Estate": 2570,
+		"French Roast":2460,
+	"Mixed Bag":2570,
+            "Cold Brew Blend Bold":2570,
+            "Cold Brew Blend Light":2570,
+            "Dhak Blend":2570,
+            "Kalledeverapura Pulp Sun Dried":2360,
+            "Organic Rosewood Blend":2360,
+            "Seethargundu Estate":2520,
+            "Silver Oak Cafe Blend":2460,
+            "Vienna Roast":2460,
+            "Monsoon Malabar AA- Hoysala Estate": 2520,
+            "South Indian Filter Blend":2310,
+             "M.S. Estate Organic":2520,
+"Thogarihunkal Estate":2570,
+"Sandalwood Estate":2570
+};
+   var obj_6_500 = {
+		"Attikan Estate": 4770,
+		"Baarbara Estate": 4770,
+		"French Roast":4560,
+	"Mixed Bag":4770,	
+            "Cold Brew Blend Bold":4770,
+            "Cold Brew Blend Light":4770,
+            "Dhak Blend":4770,        
+            "Kalledeverapura Pulp Sun Dried":4350,
+            "Organic Rosewood Blend":4350,
+            "Seethargundu Estate":5070,
+            "Silver Oak Cafe Blend":4560,
+            "Vienna Roast":4560,
+     "Monsoon Malabar AA- Hoysala Estate": 4670,
+     "South Indian Filter Blend":3880,
+      "M.S. Estate Organic":5070,
+"Thogarihunkal Estate":4770,
+"Sandalwood Estate":4770
+};
+                var obj_6_1000 = {
+		"Attikan Estate": 8740,
+		"Baarbara Estate": 8740,
+		"French Roast":8400,
+	"Mixed Bag":8740,
+            "Cold Brew Blend Bold":8740,
+            "Cold Brew Blend Light":8740,
+            "Dhak Blend":8740,
+            "Kalledeverapura Pulp Sun Dried":8030,
+            "Organic Rosewood Blend":8030,
+            "Seethargundu Estate":8550,
+                   "M.S. Estate Organic":8550,
+            "Silver Oak Cafe Blend":8400,
+            "Vienna Roast":8400,
+                  "Monsoon Malabar AA- Hoysala Estate": 8550,
+                  "South Indian Filter Blend":7870,
+"Thogarihunkal Estate":8740,
+"Sandalwood Estate":8740
+};
+   var obj_12_250 = {
+		"Attikan Estate": 4850,
+		"Baarbara Estate": 4850,
+		"French Roast":4650,
+	"Mixed Bag":4850,
+            "Cold Brew Blend Bold":4850,
+            "Cold Brew Blend Light":4850,
+            "Dhak Blend":4850,
+            "Kalledeverapura Pulp Sun Dried":4450,
+            "Organic Rosewood Blend":4450,
+            "Seethargundu Estate":4750,
+      "M.S. Estate Organic":4750,
+            "Silver Oak Cafe Blend":4650,
+            "Vienna Roast":4650,
+     "Monsoon Malabar AA- Hoysala Estate": 4750,
+     "South Indian Filter Blend":4350,
+"Thogarihunkal Estate":4850,
+"Sandalwood Estate":4850
+};
+                var obj_12_500 = {
+		"Attikan Estate":9000,
+			"Baarbara Estate":9000,
+			"Cold Brew Blend Bold":9000,
+			"Cold Brew Blend Light":9000,
+			"Dhak Blend":9000,
+			"French Roast":8610,
+			"Kalledeverapura Pulp Sun Dried":8210, 
+			"Organic Rosewood Blend":8210,
+			"Seethargundu Estate":8810,
+                   "M.S. Estate Organic":8810,
+			"Silver Oak Cafe Blend":8610,
+			"Vienna Roast":8610,
+			"Mixed Bag":9000,
+                  "Monsoon Malabar AA- Hoysala Estate": 8810,
+                  "South Indian Filter Blend":8010,
+"Thogarihunkal Estate":9000,
+"Sandalwood Estate":9000
+};
+   var obj_12_1000 = {
+		"Attikan Estate":16480,
+"Baarbara Estate":16480,
+"Cold Brew Blend Bold":16480,
+"Cold Brew Blend Light":16480,
+"Dhak Blend":16480,
+ "French Roast":15840,
+"Kalledeverapura Pulp Sun Dried":15140, 
+"Organic Rosewood Blend":15140, 
+"Seethargundu Estate":16130,
+      "M.S. Estate Organic":16130,
+"Silver Oak Cafe Blend":15840,
+"Vienna Roast":15840,
+"Mixed Bag":16480,
+     "Monsoon Malabar AA- Hoysala Estate": 16130,
+     "South Indian Filter Blend":14850,
+"Thogarihunkal Estate":16480,
+"Sandalwood Estate":16480
+};
+         var obj_24_250 = {
+		"Attikan Estate":9400,
+"Baarbara Estate":9400,
+"Cold Brew Blend Bold":9400,
+"Cold Brew Blend Light":9400,
+"Dhak Blend":9400,
+"French Roast":9020,
+"Kalledeverapura Pulp Sun Dried":8640, 
+"Organic Rosewood Blend":8640, 
+"Seethargundu Estate":9210,
+            "M.S. Estate Organic":9210,
+"Silver Oak Cafe Blend":9020,
+"Vienna Roast":9020, 
+"Mixed Bag":9400,
+           "Monsoon Malabar AA- Hoysala Estate": 9210,
+           "South Indian Filter Blend":8440,
+"Thogarihunkal Estate":9400,
+"Sandalwood Estate":9400
+};
+                var obj_24_500 = {
+		"Attikan Estate":17470,
+"Baarbara Estate":17470,
+"Cold Brew Blend Bold":17470,
+"Cold Brew Blend Light":17470,
+"Dhak Blend":17470,
+"Kalledeverapura Pulp Sun Dried":15930, 
+"Organic Rosewood Blend":15930, 
+"Seethargundu Estate":17080,
+                   "M.S. Estate Organic":17080,
+"Silver Oak Cafe Blend":16700,
+"Vienna Roast":16700, 
+ "French Roast":16700,
+"Mixed Bag":17470,
+                  "Monsoon Malabar AA- Hoysala Estate": 17080,
+                  "South Indian Filter Blend":15550,
+"Thogarihunkal Estate":17470,
+"Sandalwood Estate":17470
+};
+   var obj_24_1000 = {
+	"Attikan Estate":31960,
+		"Baarbara Estate":31960,
+		"Cold Brew Blend Bold":31960,
+		"Cold Brew Blend Light":31960,
+		"Dhak Blend":31960,
+		"Kalledeverapura Pulp Sun Dried":29370, 
+		"Organic Rosewood Blend":29370, 
+		"Seethargundu Estate":31290,
+      "M.S. Estate Organic":31290,
+		"Silver Oak Cafe Blend":30720,
+		"Vienna Roast":30720,
+     "French Roast":30720,
+		"Mixed Bag":31960,
+     "Monsoon Malabar AA- Hoysala Estate": 31290,
+     "South Indian Filter Blend":28800,
+"Thogarihunkal Estate":31960,
+"Sandalwood Estate":31960
+};
+
+
+
+          var subcheck=false;
+      var intproductprice=0;
+      let searchParams = new URLSearchParams(window.location.search);
+      $.each( meta['product']['variants'], function( key,val ) {
+        console.log(val.price);
+        //searchParams.get('variant')==val['id']  ||
+        if( $('select[id="productSelect-option-0"]').val()==val['public_title']){
+          if(val['name'].includes(6) && val['name'].includes(250)){
+            intproductprice=val.price/100;
+          intproductprice=obj_6_250[$('select[name="properties[Coffee]"]').val()];
+            subcheck=true;
+          }
+           else if(val['name'].includes(3) && val['name'].includes(250)){
+             intproductprice=val.price/100;
+            intproductprice=obj_3_250[$('select[name="properties[Coffee]"]').val()];
+            subcheck=true;
+          }
+          else if(val['name'].includes(3) && val['name'].includes(500)){
+            intproductprice=val.price/100;
+            intproductprice=obj_3_500[$('select[name="properties[Coffee]"]').val()];
+            subcheck=true;
+          }
+          else if(val['name'].includes(3) && val['name'].includes(1000)){
+            intproductprice=val.price/100;
+            intproductprice=obj_3_1000[$('select[name="properties[Coffee]"]').val()];
+            subcheck=true;
+          }
+          else if(val['name'].includes(6) && val['name'].includes(500)){
+            intproductprice=val.price/100;
+            intproductprice=obj_6_500[$('select[name="properties[Coffee]"]').val()];
+            subcheck=true;
+          }
+           else if(val['name'].includes(6) && val['name'].includes(1000)){
+             intproductprice=val.price/100;
+            intproductprice=obj_6_1000[$('select[name="properties[Coffee]"]').val()];
+             subcheck=true;
+          }
+           else if(val['name'].includes(12) && val['name'].includes(250)){
+             intproductprice=val.price/100;
+            intproductprice=obj_12_250[$('select[name="properties[Coffee]"]').val()];
+             subcheck=true;
+          }
+           else if(val['name'].includes(12) && val['name'].includes(500)){
+             intproductprice=val.price/100;
+            intproductprice=obj_12_500[$('select[name="properties[Coffee]"]').val()];
+             subcheck=true;
+          }
+           else if(val['name'].includes(12) && val['name'].includes(1000)){
+             intproductprice=val.price/100;
+            intproductprice=obj_12_1000[$('select[name="properties[Coffee]"]').val()];
+             subcheck=true;
+          }           
+          else if(val['name'].includes(24) && val['name'].includes(250)){
+            intproductprice=val.price/100;
+            intproductprice=obj_24_250[$('select[name="properties[Coffee]"]').val()];
+          }
+           else if(val['name'].includes(24) && val['name'].includes(500)){
+             intproductprice=val.price/100;
+            intproductprice=obj_24_500[$('select[name="properties[Coffee]"]').val()];
+             subcheck=true;
+          }
+           else if(val['name'].includes(24) && val['name'].includes(1000)){
+             intproductprice=val.price/100;
+            intproductprice=obj_24_1000[$('select[name="properties[Coffee]"]').val()];
+             subcheck=true;
+          }
+          else{
+        	intproductprice=val['price']/100;
+            subcheck=true;
+          }
+          
+//            $("#varientdivspans").show();
+//             $("#comparePrice").hide();
+//             var varientname = val['public_title'];
+//             // console.log("varientname==="+varientname)
+//             $('#varientdivspans span').each(function() {
+//               var vname = $(this).attr('data-name');
+//               if(varientname == vname){
+//                 $(this).show();
+//                 $("#comparePrice").hide();
+//               }else{
+//                 $(this).hide();
+//                // $("#comparePrice").show();
+//               }
+//             })
+            
+               var selectedProd = $('#productSelect-option-0 option:selected').attr("value");
+                  if(selectedProd == 'Acaia Pearl Scale'){ 
+                    $("#acaiaPearlScaleTable").show();
+                     $("#acaiaPearlScale2021Table").hide();
+                  }else if(selectedProd == 'Acaia Pearl Scale 2021'){ 
+                      $("#acaiaPearlScale2021Table").show();
+                     $("#acaiaPearlScaleTable").hide();
+                  }else if(selectedProd == 'Acaia Pearl Scale - White'){ 
+                    $("#acaiaPearlScaleTable").show();
+                     $("#acaiaPearlScale2021Table").hide();
+                  }else if(selectedProd == 'Acaia Pearl Scale - Black'){ 
+                    $("#acaiaPearlScaleTable").show();
+                     $("#acaiaPearlScale2021Table").hide();
+                  }else if(selectedProd == 'Acaia Pearl Scale 2021 - White'){ 
+                      $("#acaiaPearlScale2021Table").show();
+                     $("#acaiaPearlScaleTable").hide();
+                  }
+            
+            
+        }
+		});
+          console.log('intproduct price is ');
+          console.log(intproductprice);
+          console.log(subcheck);
+          
+          campairedPriceFun();
+      
+      
+      //var productprice=$('#ProductPrice').text();
+       // intproductprice=parseInt(productprice.replace('Rs. ','').replace(',','').replace('.00',''),10);
+if(subcheck){
+  if(intproductprice===undefined){
+    console.log("undefined");
+  }
+  else{
+    $('#ProductPrice').text('RS. '+intproductprice);
+  }
+	
+}
+       //$('#ProductPrice').text(intproductprice-(intproductprice*obj[$('select[name="properties[Coffee]"]').val()]*.01));
+     
+});
+    $(function() {
+var obj_3_250 = {
+"Attikan Estate": 1320,
+  "Baarbara Estate": 1320,
+  "French Roast":1260,
+  "Mixed Bag":1320,
+  "Cold Brew Blend Bold":1320,
+  "Cold Brew Blend Light":1320,
+  "Dhak Blend":1320,
+  "Kalledeverapura Pulp Sun Dried":1210,
+  "Organic Rosewood Blend":1320,
+  "Seethargundu Estate":1290,
+  "Silver Oak Cafe Blend":1260,
+  "Vienna Roast":1260,
+  "Monsoon Malabar AA- Hoysala Estate": 1290,
+  "South Indian Filter Blend":1180,
+  "M.S. Estate Organic":1290,
+"Thogarihunkal Estate":1320,
+"Sandalwood Estate":1320
+};
+     var obj_3_500 = {
+                "Attikan Estate": 2450,
+        "Baarbara Estate": 2450,
+        "French Roast":2340,
+       "Mixed Bag":2450,
+            "Cold Brew Blend Bold":2450,
+            "Cold Brew Blend Light":2450,
+            "Dhak Blend":2450,
+            "Kalledeverapura Pulp Sun Dried":2240,
+            "Organic Rosewood Blend":2240,
+            "Seethargundu Estate":2400,
+            "Silver Oak Cafe Blend":2340,
+            "Vienna Roast":2340,
+       "Monsoon Malabar AA- Hoysala Estate": 2400,
+       "South Indian Filter Blend":2180,
+       "M.S. Estate Organic":2400,
+"Thogarihunkal Estate":2450,
+"Sandalwood Estate":2450
+
+       
+};
+var obj_3_1000 = {
+        "Attikan Estate": 4490,
+        "Baarbara Estate": 4490,
+        "French Roast":4320,
+  "Mixed Bag":4490,
+            "Cold Brew Blend Bold":4490,
+            "Cold Brew Blend Light":4490,
+            "Dhak Blend":4490,
+            "Kalledeverapura Pulp Sun Dried":4130,
+            "Organic Rosewood Blend":4130,
+            "Seethargundu Estate":4400,
+            "Silver Oak Cafe Blend":4320,
+            "Vienna Roast":4320,
+  "Monsoon Malabar AA- Hoysala Estate": 4400,
+  "South Indian Filter Blend":4050,
+  "M.S. Estate Organic":4400,
+"Thogarihunkal Estate":2450,
+"Sandalwood Estate":2450
+};
+          var obj_6_250 = {
+		"Attikan Estate": 2570,
+		"Baarbara Estate": 2570,
+		"French Roast":2460,
+	"Mixed Bag":2570,
+            "Cold Brew Blend Bold":2570,
+            "Cold Brew Blend Light":2570,
+            "Dhak Blend":2570,
+            "Kalledeverapura Pulp Sun Dried":2360,
+            "Organic Rosewood Blend":2360,
+            "Seethargundu Estate":2520,
+            "Silver Oak Cafe Blend":2460,
+            "Vienna Roast":2460,
+            "Monsoon Malabar AA- Hoysala Estate": 2520,
+            "South Indian Filter Blend":2310,
+             "M.S. Estate Organic":2520,
+"Thogarihunkal Estate":2570,
+"Sandalwood Estate":2570
+};
+   var obj_6_500 = {
+		"Attikan Estate": 4770,
+		"Baarbara Estate": 4770,
+		"French Roast":4560,
+	"Mixed Bag":4770,	
+            "Cold Brew Blend Bold":4770,
+            "Cold Brew Blend Light":4770,
+            "Dhak Blend":4770,        
+            "Kalledeverapura Pulp Sun Dried":4350,
+            "Organic Rosewood Blend":4350,
+            "Seethargundu Estate":5070,
+            "Silver Oak Cafe Blend":4560,
+            "Vienna Roast":4560,
+     "Monsoon Malabar AA- Hoysala Estate": 4670,
+     "South Indian Filter Blend":3880,
+      "M.S. Estate Organic":5070,
+"Thogarihunkal Estate":4770,
+"Sandalwood Estate":4770
+
+};
+                var obj_6_1000 = {
+		"Attikan Estate": 8740,
+		"Baarbara Estate": 8740,
+		"French Roast":8400,
+	"Mixed Bag":8740,
+            "Cold Brew Blend Bold":8740,
+            "Cold Brew Blend Light":8740,
+            "Dhak Blend":8740,
+            "Kalledeverapura Pulp Sun Dried":8030,
+            "Organic Rosewood Blend":8030,
+            "Seethargundu Estate":8550,
+                   "M.S. Estate Organic":8550,
+            "Silver Oak Cafe Blend":8400,
+            "Vienna Roast":8400,
+                  "Monsoon Malabar AA- Hoysala Estate": 8550,
+                  "South Indian Filter Blend":7870,
+"Thogarihunkal Estate":8740,
+"Sandalwood Estate":8740
+};
+   var obj_12_250 = {
+		"Attikan Estate": 4850,
+		"Baarbara Estate": 4850,
+		"French Roast":4650,
+	"Mixed Bag":4850,
+            "Cold Brew Blend Bold":4850,
+            "Cold Brew Blend Light":4850,
+            "Dhak Blend":4850,
+            "Kalledeverapura Pulp Sun Dried":4450,
+            "Organic Rosewood Blend":4450,
+            "Seethargundu Estate":4750,
+      "M.S. Estate Organic":4750,
+            "Silver Oak Cafe Blend":4650,
+            "Vienna Roast":4650,
+     "Monsoon Malabar AA- Hoysala Estate": 4750,
+     "South Indian Filter Blend":4350,
+"Thogarihunkal Estate":4850,
+"Sandalwood Estate":4850
+
+};
+                var obj_12_500 = {
+		"Attikan Estate":9000,
+			"Baarbara Estate":9000,
+			"Cold Brew Blend Bold":9000,
+			"Cold Brew Blend Light":9000,
+			"Dhak Blend":9000,
+			"French Roast":8610,
+			"Kalledeverapura Pulp Sun Dried":8210, 
+			"Organic Rosewood Blend":8210,
+			"Seethargundu Estate":8810,
+                   "M.S. Estate Organic":8810,
+			"Silver Oak Cafe Blend":8610,
+			"Vienna Roast":8610,
+			"Mixed Bag":9000,
+                  "Monsoon Malabar AA- Hoysala Estate": 8810,
+                  "South Indian Filter Blend":8010,
+"Thogarihunkal Estate":9000,
+"Sandalwood Estate":9000
+};
+   var obj_12_1000 = {
+		"Attikan Estate":16480,
+"Baarbara Estate":16480,
+"Cold Brew Blend Bold":16480,
+"Cold Brew Blend Light":16480,
+"Dhak Blend":16480,
+ "French Roast":15840,
+"Kalledeverapura Pulp Sun Dried":15140, 
+"Organic Rosewood Blend":15140, 
+"Seethargundu Estate":16130,
+      "M.S. Estate Organic":16130,
+"Silver Oak Cafe Blend":15840,
+"Vienna Roast":15840,
+"Mixed Bag":16480,
+     "Monsoon Malabar AA- Hoysala Estate": 16130,
+     "South Indian Filter Blend":14850,
+"Thogarihunkal Estate":16480,
+"Sandalwood Estate":16480
+};
+         var obj_24_250 = {
+		"Attikan Estate":9400,
+"Baarbara Estate":9400,
+"Cold Brew Blend Bold":9400,
+"Cold Brew Blend Light":9400,
+"Dhak Blend":9400,
+"French Roast":9020,
+"Kalledeverapura Pulp Sun Dried":8640, 
+"Organic Rosewood Blend":8640, 
+"Seethargundu Estate":9210,
+            "M.S. Estate Organic":9210,
+"Silver Oak Cafe Blend":9020,
+"Vienna Roast":9020, 
+"Mixed Bag":9400,
+           "Monsoon Malabar AA- Hoysala Estate": 9210,
+           "South Indian Filter Blend":8440,
+"Thogarihunkal Estate":9400,
+"Sandalwood Estate":9400
+
+};
+                var obj_24_500 = {
+		"Attikan Estate":17470,
+"Baarbara Estate":17470,
+"Cold Brew Blend Bold":17470,
+"Cold Brew Blend Light":17470,
+"Dhak Blend":17470,
+"Kalledeverapura Pulp Sun Dried":15930, 
+"Organic Rosewood Blend":15930, 
+"Seethargundu Estate":17080,
+                   "M.S. Estate Organic":17080,
+"Silver Oak Cafe Blend":16700,
+"Vienna Roast":16700, 
+ "French Roast":16700,
+"Mixed Bag":17470,
+                  "Monsoon Malabar AA- Hoysala Estate": 17080,
+                  "South Indian Filter Blend":15550,
+"Thogarihunkal Estate":17470,
+"Sandalwood Estate":17470
+};
+   var obj_24_1000 = {
+	"Attikan Estate":31960,
+		"Baarbara Estate":31960,
+		"Cold Brew Blend Bold":31960,
+		"Cold Brew Blend Light":31960,
+		"Dhak Blend":31960,
+		"Kalledeverapura Pulp Sun Dried":29370, 
+		"Organic Rosewood Blend":29370, 
+		"Seethargundu Estate":31290,
+      "M.S. Estate Organic":31290,
+		"Silver Oak Cafe Blend":30720,
+		"Vienna Roast":30720,
+     "French Roast":30720,
+		"Mixed Bag":31960,
+     "Monsoon Malabar AA- Hoysala Estate": 31290,
+     "South Indian Filter Blend":28800,
+"Thogarihunkal Estate":31960,
+"Sandalwood Estate":31960
+};
+
+
+      var subcheck=false;
+      var intproductprice=0;
+      let searchParams = new URLSearchParams(window.location.search);
+      if(searchParams.get('variant')===null){
+        console.log($('select[id="productSelect-option-0"]').val());
+      }
+      
+      $.each( meta['product']['variants'], function( key,val ) {
+        //console.log(val.price);
+        //searchParams.get('variant')==val['id'] ||
+        if( $('select[id="productSelect-option-0"]').val()==val['public_title']){
+          if(val['name'].includes(6) && val['name'].includes(250)){
+            intproductprice=val.price/100;
+          intproductprice=obj_6_250[$('select[name="properties[Coffee]"]').val()];
+            subcheck=true;
+          }
+           else if(val['name'].includes(3) && val['name'].includes(250)){
+             intproductprice=val.price/100;
+            intproductprice=obj_3_250[$('select[name="properties[Coffee]"]').val()];
+            subcheck=true;
+          }
+          else if(val['name'].includes(3) && val['name'].includes(500)){
+            intproductprice=val.price/100;
+            intproductprice=obj_3_500[$('select[name="properties[Coffee]"]').val()];
+            subcheck=true;
+          }
+          else if(val['name'].includes(3) && val['name'].includes(1000)){
+            intproductprice=val.price/100;
+            intproductprice=obj_3_1000[$('select[name="properties[Coffee]"]').val()];
+            subcheck=true;
+          }
+          else if(val['name'].includes(6) && val['name'].includes(500)){
+            intproductprice=val.price/100;
+            intproductprice=obj_6_500[$('select[name="properties[Coffee]"]').val()];
+            subcheck=true;
+          }
+           else if(val['name'].includes(6) && val['name'].includes(1000)){
+             intproductprice=val.price/100;
+            intproductprice=obj_6_1000[$('select[name="properties[Coffee]"]').val()];
+             subcheck=true;
+          }
+           else if(val['name'].includes(12) && val['name'].includes(250)){
+             intproductprice=val.price/100;
+            intproductprice=obj_12_250[$('select[name="properties[Coffee]"]').val()];
+             subcheck=true;
+          }
+           else if(val['name'].includes(12) && val['name'].includes(500)){
+             intproductprice=val.price/100;
+            intproductprice=obj_12_500[$('select[name="properties[Coffee]"]').val()];
+             subcheck=true;
+          }
+           else if(val['name'].includes(12) && val['name'].includes(1000)){
+             intproductprice=val.price/100;
+            intproductprice=obj_12_1000[$('select[name="properties[Coffee]"]').val()];
+             subcheck=true;
+          }           
+          else if(val['name'].includes(24) && val['name'].includes(250)){
+            intproductprice=val.price/100;
+            intproductprice=obj_24_250[$('select[name="properties[Coffee]"]').val()];
+            subcheck=true;
+          }
+           else if(val['name'].includes(24) && val['name'].includes(500)){
+             intproductprice=val.price/100;
+            intproductprice=obj_24_500[$('select[name="properties[Coffee]"]').val()];
+             subcheck=true;
+          }
+           else if(val['name'].includes(24) && val['name'].includes(1000)){
+             intproductprice=val.price/100;
+            intproductprice=obj_24_1000[$('select[name="properties[Coffee]"]').val()];
+             subcheck=true;
+          }
+          else{
+        	intproductprice=val['price']/100;
+            subcheck=true;
+          }
+          
+          
+          
+          
+        }
+        
+         
+        if(val.name == '100% Whole Wheat Sourdough Bread'){
+          $("#varientdivspans").show();
+          $("#ComparePrice").hide();
+        }
+        
+        
+        //console.log("val.public_title--====="+val.public_title)
+        campairedPriceFun();
+        
+		});
+      
+      
+      //var productprice=$('#ProductPrice').text();
+       // intproductprice=parseInt(productprice.replace('Rs. ','').replace(',','').replace('.00',''),10);
+      if(subcheck){
+        $('#ProductPrice').text('RS. '+intproductprice);
+      }
+  
+	
+       //$('#ProductPrice').text(intproductprice-(intproductprice*obj[$('select[name="properties[Coffee]"]').val()]*.01));
+     
+});
+    
+    $body.on('change', 'select[id="productSelect-option-1"]', function() {
+       campairedPriceFun();
+       CompareGiftPackPrice();
+     })
+     
+    
+    $body.on('change', '.productgiftpackcoffee', function() {
+       CompareGiftPackPrice();
+     })
+     
+     $body.on('change', 'select[id="productSelect-option-0"]', function() {
+       CompareGiftPackPrice();
+     })
+     
+      function CompareGiftPackPrice(){
+        
+    var selectedProd = $('#productSelect-option-0 option:selected').attr("value");
+      
+       var selectedProd_1 = $('#productSelect-option-1 option:selected').attr("value");
+      var selctedname = '';
+      if (selectedProd_1 === undefined || selectedProd_1 === null) {
+          selctedname = selectedProd;
+      }else{
+        selctedname = selectedProd+" / "+selectedProd_1;
+      } 
+    $("#varientdivspansgift").show();
+            $("#comparePrice").hide(); 
+            $('#varientdivspansgift span').each(function() {
+              var vname = $(this).attr('data-name');
+              //console.log("vname==="+vname)
+              if(vname == selctedname){
+                $(this).show();
+                $("#comparePrice").hide();
+                $("#frenchpreshsaved").show();
+              }else{
+                $(this).hide();
+              }
+            })
+            
+    }
+    
+    
+    function campairedPriceFun(){
+    var selectedProd = $('#productSelect-option-0 option:selected').attr("value");
+      
+       var selectedProd_1 = $('#productSelect-option-1 option:selected').attr("value");
+      var selctedname = '';
+      if (selectedProd_1 === undefined || selectedProd_1 === null) {
+          selctedname = selectedProd;
+      }else{
+        selctedname = selectedProd+" / "+selectedProd_1;
+      }
+    //console.log("selectedProd==="+selectedProd)
+   // console.log("selectedProd_1==="+selectedProd_1)
+   // console.log("campairedPriceFun======="+selctedname)
+    $("#varientdivspans").show();
+            $("#comparePrice").hide(); 
+            $('#varientdivspans span').each(function() {
+              var vname = $(this).attr('data-name');
+              //console.log("vname==="+vname)
+              if(vname == selctedname){
+                $(this).show();
+                $("#comparePrice").hide();
+              }else{
+                $(this).hide();
+              }
+            })
+            
+    }
+
+    
+    ///////////END SECTION
+
+    // Prevent cart from being submitted while quantities are changing
+    $body.on('submit', 'form.ajaxcart', function(evt) {
+      if (isUpdating) {
+        evt.preventDefault();
+      }
+    });
+
+    // Highlight the text when focused
+    $body.on('focus', '.ajaxcart__qty-adjust', function() {
+      var $el = $(this);
+      setTimeout(function() {
+        $el.select();
+      }, 50);
+    });
+
+    function updateQuantity(line, qty) {
+      isUpdating = true;
+
+      // Add activity classes when changing cart quantities
+      var $row = $('.ajaxcart__row[data-line="' + line + '"]').addClass('is-loading');
+
+      if (qty === 0) {
+        $row.parent().addClass('is-removed');
+      }
+
+      // Slight delay to make sure removed animation is done
+      setTimeout(function() {
+        ShopifyAPI.changeItem(line, qty, adjustCartCallback);
+      }, 250);
+    }
+
+    // Save note anytime it's changed
+    $body.on('change', 'textarea[name="note"]', function() {
+      var newNote = $(this).val();
+
+      // Update the cart note in case they don't click update/checkout
+      ShopifyAPI.updateCartNote(newNote, function(cart) {});
+    });
+  };
+
+  adjustCartCallback = function (cart) {
+    // Update quantity and price
+    updateCountPrice(cart);
+
+    // Reprint cart on short timeout so you don't see the content being removed
+    setTimeout(function() {
+      isUpdating = false;
+      ShopifyAPI.getCart(buildCart);
+    }, 150)
+  };
+
+  createQtySelectors = function() {
+    // If there is a normal quantity number field in the ajax cart, replace it with our version
+    if ($('input[type="number"]', $cartContainer).length) {
+      $('input[type="number"]', $cartContainer).each(function() {
+        var $el = $(this),
+            currentQty = $el.val();
+
+        var itemAdd = currentQty + 1,
+            itemMinus = currentQty - 1,
+            itemQty = currentQty;
+
+        var source   = $("#AjaxQty").html(),
+            template = Handlebars.compile(source),
+            data = {
+              key: $el.data('id'),
+              itemQty: itemQty,
+              itemAdd: itemAdd,
+              itemMinus: itemMinus
+            };
+
+        // Append new quantity selector then remove original
+        $el.after(template(data)).remove();
+      });
+    }
+  };
+
+  qtySelectors = function() {
+    // Change number inputs to JS ones, similar to ajax cart but without API integration.
+    // Make sure to add the existing name and id to the new input element
+    var numInputs = $('input[type="number"]');
+
+    if (numInputs.length) {
+      numInputs.each(function() {
+        var $el = $(this),
+            currentQty = $el.val(),
+            inputName = $el.attr('name'),
+            inputId = $el.attr('id');
+
+        var itemAdd = currentQty + 1,
+            itemMinus = currentQty - 1,
+            itemQty = currentQty;
+
+        var source   = $("#JsQty").html(),
+            template = Handlebars.compile(source),
+            data = {
+              key: $el.data('id'),
+              itemQty: itemQty,
+              itemAdd: itemAdd,
+              itemMinus: itemMinus,
+              inputName: inputName,
+              inputId: inputId
+            };
+
+        // Append new quantity selector then remove original
+        $el.after(template(data)).remove();
+      });
+
+      // Setup listeners to add/subtract from the input
+      $('.js-qty__adjust').on('click', function() {
+        var $el = $(this),
+            id = $el.data('id'),
+            $qtySelector = $el.siblings('.js-qty__num'),
+            qty = parseInt($qtySelector.val().replace(/\D/g, ''));
+
+        var qty = validateQty(qty);
+
+        // Add or subtract from the current quantity
+        if ($el.hasClass('js-qty__adjust--plus')) {
+          qty += 1;
+        } else {
+          qty -= 1;
+          if (qty <= 1) qty = 1;
+        }
+
+        // Update the input's number
+        $qtySelector.val(qty);
+      });
+    }
+  };
+
+  validateQty = function (qty) {
+    if((parseFloat(qty) == parseInt(qty)) && !isNaN(qty)) {
+      // We have a valid number!
+    } else {
+      // Not a number. Default to 1.
+      qty = 1;
+    }
+    return qty;
+  };
+
+  module = {
+    init: init,
+    load: loadCart
+  };
+
+  return module;
+
+}(ajaxCart || {}, jQuery));
